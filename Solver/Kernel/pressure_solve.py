@@ -1,5 +1,5 @@
 import numpy as np
-import boundary_conditions
+from . import boundary_conditions
 
 def pressure_solve(velocity, fluid, dx, dt, rho, jacobi_iterations):
     divergence = np.zeros(fluid.shape, dtype=np.float64)

@@ -1,23 +1,23 @@
 import numpy as np
 from pathlib import Path
 
-import output
-import pressure_solve
-import boundary_conditions
-import particles as particle_ops
-import viscosity
+from . import output
+from . import pressure_solve
+from . import boundary_conditions
+from . import particles as particle_ops
+from . import viscosity
 
 
-def solver():
+def solver(output_path):
     t_start = 0.0
     t_end = 10.0
     fps = 24
     dt = 1.0 / fps
 
-    Lx = 50
-    Ly = 50
-    Lz = 50
-    delta = 1
+    Lx = 5
+    Ly = 5
+    Lz = 5
+    delta = 0.1
 
     rho_air = 1.225
     rho_water = 1000.0
@@ -29,14 +29,14 @@ def solver():
     nz = int(Lz / delta)
     dx = delta
 
-    jacobi_iterations = 50
+    jacobi_iterations = 100
     gravity = np.array([0.0, -9.81, 0.0])
 
     x = np.arange(1, nx - 1)[:, None, None]
 
     # Linke 10 % der Domain mit Wasser füllen
     initial_fluid = np.broadcast_to(
-        x < 0.1 * nx,
+        x < 0.2 * nx,
         (nx - 2, ny - 2, nz - 2)
     )
 
@@ -54,7 +54,7 @@ def solver():
 
     particle_velocity = np.zeros((len(particles), 3), dtype=np.float64)
 
-    output_dir = Path(r"C:\Users\lutz_\Desktop\test")
+    output_dir = Path(output_path).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     output_file = output_dir / "water_particles.usdc"
@@ -111,8 +111,3 @@ def solver():
         output.write_particles(usd_points, particles, frame=step + 2)
 
     output.save_usd(stage)
-
-
-
-if __name__ == "__main__":
-    solver()
