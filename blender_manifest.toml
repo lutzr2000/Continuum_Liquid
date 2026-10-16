@@ -1,0 +1,31 @@
+schema_version = "1.0.0"
+
+id = "continuum_liquid"
+version = "0.1.0"
+name = "Continuum Liquid"
+tagline = "Water simulator"
+maintainer = "Lutz Rohlfing"
+type = "add-on"
+
+website = "https://github.com/lutzr2000/Continuum_Liquid/"
+tags = ["Physics"]
+
+blender_version_min = "5.1.0"
+
+platforms = ["windows-x64"]
+
+license = [
+    "SPDX:GPL-3.0-or-later",
+]
+
+wheels = [
+    "./wheels/numpy-2.4.6-cp313-cp313-win_amd64.whl",
+    "./wheels/trimesh-4.12.2-py3-none-any.whl",
+    "./wheels/pyopencl-2026.1.4-cp313-cp313-win_amd64.whl",
+    "./wheels/pytools-2026.1.1-py3-none-any.whl",
+    "./wheels/siphash24-1.9-cp313-cp313-win_amd64.whl",
+    "./custom_wheels/continuum_vdb_writer-0.3.0-cp313-cp313-win_amd64.whl"
+]
+
+[permissions]
+files = "Read and write simulation cache files"
