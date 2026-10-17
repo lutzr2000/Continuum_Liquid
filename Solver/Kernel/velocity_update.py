@@ -1,10 +1,10 @@
 import numpy as np
 
 
-def apply_viscosity(velocity, nu, dx, dt):
-
-    if nu <= 0.0:
-        return velocity
+def update_velocity(velocity, fluid, gravity, fx, fy, fz, rho, nu, dx, dt):
+    force = np.array([fx, fy, fz], dtype=velocity.dtype)
+    result = velocity.copy()
+    result[fluid] += (gravity + force / rho) * dt
 
     laplacian = (
         velocity[2:, 1:-1, 1:-1, :]
@@ -16,10 +16,6 @@ def apply_viscosity(velocity, nu, dx, dt):
         - 6.0 * velocity[1:-1, 1:-1, 1:-1, :]
     ) / (dx * dx)
 
-    result = velocity.copy()
-
-    result[1:-1, 1:-1, 1:-1, :] += (
-        nu * dt * laplacian
-    )
+    result[1:-1, 1:-1, 1:-1, :] += nu * dt * laplacian
 
     return result

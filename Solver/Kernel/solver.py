@@ -5,7 +5,7 @@ from . import output
 from . import pressure_solve
 from . import boundary_conditions
 from . import particles as particle_ops
-from . import viscosity
+from . import velocity_update
 
 
 def solver(output_path):
@@ -31,6 +31,9 @@ def solver(output_path):
 
     jacobi_iterations = 100
     gravity = np.array([0.0, -9.81, 0.0])
+    fx = 0.0
+    fy = 0.0
+    fz = 0.0
 
     x = np.arange(1, nx - 1)[:, None, None]
 
@@ -80,13 +83,13 @@ def solver(output_path):
             particles, particle_velocity, (nx, ny, nz), dx
         )
 
+        velocity = boundary_conditions.grid_domain_bc(velocity)
+
         old_velocity = velocity.copy()
 
-        velocity[fluid] += gravity * dt
-
-        velocity = viscosity.apply_viscosity(velocity, nu_water, dx, dt)
-
-        velocity = boundary_conditions.apply_boundary_conditions(velocity)
+        velocity = velocity_update.update_velocity(
+            velocity, fluid, gravity, fx, fy, fz, rho_water, nu_water, dx, dt
+        )
 
         pressure = pressure_solve.pressure_solve(
             velocity, fluid, dx, dt, rho_water, jacobi_iterations
@@ -96,15 +99,13 @@ def solver(output_path):
             velocity, pressure, dx, dt, rho_water
         )
 
-        velocity = boundary_conditions.apply_boundary_conditions(velocity)
-
         particle_velocity = particle_ops.grid_to_particle(
             particle_velocity, velocity, old_velocity, cell
         )
 
         particles = particle_ops.advect_particles(particles, particle_velocity, dt)
 
-        particles, particle_velocity = boundary_conditions.apply_particle_boundary(
+        particles, particle_velocity = boundary_conditions.particle_domain_bc(
             particles, particle_velocity, (nx, ny, nz), dx
         )
 

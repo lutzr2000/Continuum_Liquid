@@ -20,7 +20,7 @@ def create_pressure_boundary(grid_shape):
     return diagonal
 
 
-def apply_pressure_boundary_conditions(pressure):
+def neumann_domain_bc(pressure):
     pressure_with_walls = pressure.copy()
     pressure_with_walls[0, :, :] = pressure_with_walls[1, :, :]
     pressure_with_walls[-1, :, :] = pressure_with_walls[-2, :, :]
@@ -32,14 +32,14 @@ def apply_pressure_boundary_conditions(pressure):
     return pressure_with_walls
 
 
-def apply_boundary_conditions(velocity):
+def grid_domain_bc(velocity):
     velocity[[0, -1], :, :, :] = 0.0
     velocity[:, [0, -1], :, :] = 0.0
     velocity[:, :, [0, -1], :] = 0.0
 
     return velocity
 
-def apply_particle_boundary(particles, particle_velocity, grid_shape, dx):
+def particle_domain_bc(particles, particle_velocity, grid_shape, dx):
     lower = np.full(3, 1.001 * dx)
     upper = (np.asarray(grid_shape) - 1.001) * dx
     hit_wall = (particles < lower) | (particles > upper)

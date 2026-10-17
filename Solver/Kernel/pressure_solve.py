@@ -36,21 +36,17 @@ def pressure_solve(velocity, fluid, dx, dt, rho, jacobi_iterations):
         )
         pressure = np.where(fluid, pressure_new, 0.0)
 
-    return pressure
+    # Ghostdruck an festen Wänden: p_ghost = p_fluid, also dp/dn = 0.
+    return boundary_conditions.neumann_domain_bc(pressure)
 
 
 def pressure_correction(velocity, pressure, dx, dt, rho):
-    # Ghostdruck an festen Wänden: p_ghost = p_fluid, also dp/dn = 0.
-    pressure_with_walls = boundary_conditions.apply_pressure_boundary_conditions(
-        pressure
-    )
-
     velocity[1:-1, 1:-1, 1:-1, 0] -= (
         dt
         / rho
         * (
-            pressure_with_walls[2:, 1:-1, 1:-1]
-            - pressure_with_walls[:-2, 1:-1, 1:-1]
+            pressure[2:, 1:-1, 1:-1]
+            - pressure[:-2, 1:-1, 1:-1]
         )
         / (2.0 * dx)
     )
@@ -58,8 +54,8 @@ def pressure_correction(velocity, pressure, dx, dt, rho):
         dt
         / rho
         * (
-            pressure_with_walls[1:-1, 2:, 1:-1]
-            - pressure_with_walls[1:-1, :-2, 1:-1]
+            pressure[1:-1, 2:, 1:-1]
+            - pressure[1:-1, :-2, 1:-1]
         )
         / (2.0 * dx)
     )
@@ -67,8 +63,8 @@ def pressure_correction(velocity, pressure, dx, dt, rho):
         dt
         / rho
         * (
-            pressure_with_walls[1:-1, 1:-1, 2:]
-            - pressure_with_walls[1:-1, 1:-1, :-2]
+            pressure[1:-1, 1:-1, 2:]
+            - pressure[1:-1, 1:-1, :-2]
         )
         / (2.0 * dx)
     )
