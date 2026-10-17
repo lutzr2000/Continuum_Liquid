@@ -1,50 +1,74 @@
 import numpy as np
 
+from . import kernel_config
 
-def create_pressure_boundary(grid_shape):
-    solid = np.zeros(grid_shape, dtype=bool)
-    solid[[0, -1], :, :] = True
-    solid[:, [0, -1], :] = True
-    solid[:, :, [0, -1]] = True
+FIELD_DTYPE = kernel_config.FIELD_DTYPE
 
-    diagonal = np.zeros(grid_shape, dtype=np.float64)
-    diagonal[1:-1, 1:-1, 1:-1] = (
-        (~solid[2:, 1:-1, 1:-1]).astype(np.float64)
-        + (~solid[:-2, 1:-1, 1:-1]).astype(np.float64)
-        + (~solid[1:-1, 2:, 1:-1]).astype(np.float64)
-        + (~solid[1:-1, :-2, 1:-1]).astype(np.float64)
-        + (~solid[1:-1, 1:-1, 2:]).astype(np.float64)
-        + (~solid[1:-1, 1:-1, :-2]).astype(np.float64)
+
+def create_pressure_boundary(kernels, queue, diagonal, grid_shape):
+    nx, ny, nz = grid_shape
+    kernels["create_pressure_boundary"](
+        queue,
+        (nx * ny * nz,),
+        None,
+        diagonal,
+        np.int32(nx),
+        np.int32(ny),
+        np.int32(nz),
     )
-
     return diagonal
 
 
-def neumann_domain_bc(pressure):
-    pressure_with_walls = pressure.copy()
-    pressure_with_walls[0, :, :] = pressure_with_walls[1, :, :]
-    pressure_with_walls[-1, :, :] = pressure_with_walls[-2, :, :]
-    pressure_with_walls[:, 0, :] = pressure_with_walls[:, 1, :]
-    pressure_with_walls[:, -1, :] = pressure_with_walls[:, -2, :]
-    pressure_with_walls[:, :, 0] = pressure_with_walls[:, :, 1]
-    pressure_with_walls[:, :, -1] = pressure_with_walls[:, :, -2]
+def neumann_domain_bc(kernels, queue, pressure, grid_shape):
+    nx, ny, nz = grid_shape
+    kernels["neumann_domain_bc"](
+        queue,
+        (nx * ny * nz,),
+        None,
+        pressure,
+        np.int32(nx),
+        np.int32(ny),
+        np.int32(nz),
+    )
+    return pressure
 
-    return pressure_with_walls
 
-
-def grid_domain_bc(velocity):
-    velocity[[0, -1], :, :, :] = 0.0
-    velocity[:, [0, -1], :, :] = 0.0
-    velocity[:, :, [0, -1], :] = 0.0
-
+def grid_domain_bc(kernels, queue, velocity, grid_shape):
+    nx, ny, nz = grid_shape
+    u, v, w = velocity
+    kernels["grid_domain_bc"](
+        queue,
+        (nx * ny * nz,),
+        None,
+        u,
+        v,
+        w,
+        np.int32(nx),
+        np.int32(ny),
+        np.int32(nz),
+    )
     return velocity
 
-def particle_domain_bc(particles, particle_velocity, grid_shape, dx):
-    lower = np.full(3, 1.001 * dx)
-    upper = (np.asarray(grid_shape) - 1.001) * dx
-    hit_wall = (particles < lower) | (particles > upper)
 
-    particles = np.clip(particles, lower, upper)
-    particle_velocity[hit_wall] = 0.0
-
+def particle_domain_bc(
+    kernels,
+    queue,
+    particles,
+    particle_velocity,
+    particle_count_total,
+    grid_shape,
+    dx,
+):
+    kernels["particle_domain_bc"](
+        queue,
+        (particle_count_total,),
+        None,
+        particles,
+        particle_velocity,
+        np.int32(particle_count_total),
+        FIELD_DTYPE(1.001 * dx),
+        FIELD_DTYPE((grid_shape[0] - 1.001) * dx),
+        FIELD_DTYPE((grid_shape[1] - 1.001) * dx),
+        FIELD_DTYPE((grid_shape[2] - 1.001) * dx),
+    )
     return particles, particle_velocity

@@ -1,77 +1,115 @@
 import numpy as np
 
+from . import helper
+from . import kernel_config
 
-def _trilinear_stencil(particles, grid_shape, dx):
-    grid_position = particles / dx - 0.5
-    base = np.floor(grid_position).astype(np.int32)
-    base = np.clip(base, 0, np.asarray(grid_shape) - 2)
-    fraction = np.clip(grid_position - base, 0.0, 1.0)
-
-    stencil = []
-    for ox in (0, 1):
-        for oy in (0, 1):
-            for oz in (0, 1):
-                offset = np.array([ox, oy, oz], dtype=np.int32)
-                weight = np.prod(
-                    np.where(offset == 1, fraction, 1.0 - fraction), axis=1
-                )
-                stencil.append((base + offset, weight))
-
-    return stencil
+FIELD_DTYPE = kernel_config.FIELD_DTYPE
 
 
 def particle_to_grid(
-    particles, particle_velocity, grid_shape, dx, particles_per_cell
+    kernels,
+    queue,
+    particles,
+    particle_velocity,
+    velocity,
+    weight,
+    particle_count,
+    fluid_fraction,
+    particle_count_total,
+    grid_shape,
+    dx,
+    particles_per_cell,
 ):
     nx, ny, nz = grid_shape
-    cell = np.clip(
-        (particles / dx).astype(np.int32),
-        1,
-        [nx - 2, ny - 2, nz - 2],
+    u, v, w = velocity
+
+    for buffer in (u, v, w, weight):
+        helper.fill_device(queue, buffer, 0.0)
+    helper.fill_device(queue, particle_count, 0, dtype=np.int32)
+
+    kernels["particle_to_grid"](
+        queue,
+        (particle_count_total,),
+        None,
+        particles,
+        particle_velocity,
+        u,
+        v,
+        w,
+        weight,
+        particle_count,
+        np.int32(particle_count_total),
+        FIELD_DTYPE(1.0 / dx),
+        np.int32(nx),
+        np.int32(ny),
+        np.int32(nz),
     )
-
-    velocity = np.zeros((nx, ny, nz, 3), dtype=np.float32)
-    weight = np.zeros((nx, ny, nz), dtype=np.float32)
-
-    stencil = _trilinear_stencil(particles, grid_shape, dx)
-    for indices, interpolation_weight in stencil:
-        index = (indices[:, 0], indices[:, 1], indices[:, 2])
-        np.add.at(weight, index, interpolation_weight)
-        for component in range(3):
-            np.add.at(
-                velocity[..., component],
-                index,
-                interpolation_weight * particle_velocity[:, component],
-            )
-
-    valid_velocity = weight > 0.0
-    velocity[valid_velocity] /= weight[valid_velocity, None]
-
-    particle_count = np.zeros((nx, ny, nz), dtype=np.int32)
-    np.add.at(particle_count, (cell[:, 0], cell[:, 1], cell[:, 2]), 1)
-    particle_volume = dx**3 / particles_per_cell
-    liquid_volume = particle_count * particle_volume
-    fluid_fraction = liquid_volume / dx**3
-
-    return velocity, fluid_fraction, stencil
+    kernels["normalize_particle_to_grid"](
+        queue,
+        (nx * ny * nz,),
+        None,
+        u,
+        v,
+        w,
+        weight,
+        particle_count,
+        fluid_fraction,
+        FIELD_DTYPE(1.0 / particles_per_cell),
+        np.int32(nx * ny * nz),
+    )
+    return velocity, fluid_fraction
 
 
-def grid_to_particle(particle_velocity, velocity, old_velocity, stencil):
-    grid_change = velocity - old_velocity
-    particle_change = np.zeros_like(particle_velocity)
-
-    for indices, interpolation_weight in stencil:
-        particle_change += (
-            interpolation_weight[:, None]
-            * grid_change[indices[:, 0], indices[:, 1], indices[:, 2]]
-        )
-
-    particle_velocity += particle_change
-
+def grid_to_particle(
+    kernels,
+    queue,
+    particle_velocity,
+    particles,
+    velocity,
+    old_velocity,
+    particle_count_total,
+    grid_shape,
+    dx,
+):
+    nx, ny, nz = grid_shape
+    u, v, w = velocity
+    old_u, old_v, old_w = old_velocity
+    kernels["grid_to_particle"](
+        queue,
+        (particle_count_total,),
+        None,
+        particle_velocity,
+        particles,
+        u,
+        v,
+        w,
+        old_u,
+        old_v,
+        old_w,
+        np.int32(particle_count_total),
+        FIELD_DTYPE(1.0 / dx),
+        np.int32(nx),
+        np.int32(ny),
+        np.int32(nz),
+    )
     return particle_velocity
 
 
-def advect_particles(particles, particle_velocity, dt):
-    particles += particle_velocity * dt
-
+def advect_particles(
+    kernels,
+    queue,
+    particles,
+    particle_velocity,
+    particle_count_total,
+    dt,
+):
+    kernels["advect_particles"](
+        queue,
+        (particle_count_total,),
+        None,
+        particles,
+        particle_velocity,
+        np.int32(particle_count_total),
+        FIELD_DTYPE(dt),
+    )
     return particles
