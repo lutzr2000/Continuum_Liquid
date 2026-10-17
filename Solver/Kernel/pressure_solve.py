@@ -1,16 +1,18 @@
 import numpy as np
 from . import boundary_conditions
 
-def pressure_solve(velocity, fluid, dx, dt, rho, jacobi_iterations):
-    divergence = np.zeros(fluid.shape, dtype=np.float64)
+
+def pressure_solve(velocity, fluid_fraction, dx, dt, rho, jacobi_iterations):
+    fluid = fluid_fraction > 0.0
+    divergence = np.zeros(fluid_fraction.shape, dtype=np.float64)
     divergence[1:-1, 1:-1, 1:-1] = (
-        velocity[2:, 1:-1, 1:-1, 0]
+        velocity[1:-1, 1:-1, 1:-1, 0]
         - velocity[:-2, 1:-1, 1:-1, 0]
-        + velocity[1:-1, 2:, 1:-1, 1]
+        + velocity[1:-1, 1:-1, 1:-1, 1]
         - velocity[1:-1, :-2, 1:-1, 1]
-        + velocity[1:-1, 1:-1, 2:, 2]
+        + velocity[1:-1, 1:-1, 1:-1, 2]
         - velocity[1:-1, 1:-1, :-2, 2]
-    ) / (2.0 * dx)
+    ) / dx
 
     pressure = np.zeros(fluid.shape, dtype=np.float64)
     rhs = rho / dt * divergence
@@ -46,27 +48,27 @@ def pressure_correction(velocity, pressure, dx, dt, rho):
         / rho
         * (
             pressure[2:, 1:-1, 1:-1]
-            - pressure[:-2, 1:-1, 1:-1]
+            - pressure[1:-1, 1:-1, 1:-1]
         )
-        / (2.0 * dx)
+        / dx
     )
     velocity[1:-1, 1:-1, 1:-1, 1] -= (
         dt
         / rho
         * (
             pressure[1:-1, 2:, 1:-1]
-            - pressure[1:-1, :-2, 1:-1]
+            - pressure[1:-1, 1:-1, 1:-1]
         )
-        / (2.0 * dx)
+        / dx
     )
     velocity[1:-1, 1:-1, 1:-1, 2] -= (
         dt
         / rho
         * (
             pressure[1:-1, 1:-1, 2:]
-            - pressure[1:-1, 1:-1, :-2]
+            - pressure[1:-1, 1:-1, 1:-1]
         )
-        / (2.0 * dx)
+        / dx
     )
 
     return velocity

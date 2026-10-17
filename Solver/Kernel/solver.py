@@ -38,10 +38,7 @@ def solver(output_path):
     x = np.arange(1, nx - 1)[:, None, None]
 
     # Linke 10 % der Domain mit Wasser füllen
-    initial_fluid = np.broadcast_to(
-        x < 0.2 * nx,
-        (nx - 2, ny - 2, nz - 2)
-    )
+    initial_fluid = np.broadcast_to(x < 0.2 * nx, (nx - 2, ny - 2, nz - 2))
 
     cells = np.argwhere(initial_fluid) + 1
 
@@ -79,9 +76,14 @@ def solver(output_path):
             f"Particles: {len(particles)}"
         )
 
-        velocity, fluid, cell = particle_ops.particle_to_grid(
-            particles, particle_velocity, (nx, ny, nz), dx
+        velocity, fluid_fraction, stencil = particle_ops.particle_to_grid(
+            particles,
+            particle_velocity,
+            (nx, ny, nz),
+            dx,
+            particles_per_axis**3,
         )
+        fluid = fluid_fraction > 0.0
 
         velocity = boundary_conditions.grid_domain_bc(velocity)
 
@@ -92,7 +94,7 @@ def solver(output_path):
         )
 
         pressure = pressure_solve.pressure_solve(
-            velocity, fluid, dx, dt, rho_water, jacobi_iterations
+            velocity, fluid_fraction, dx, dt, rho_water, jacobi_iterations
         )
 
         velocity = pressure_solve.pressure_correction(
@@ -100,7 +102,7 @@ def solver(output_path):
         )
 
         particle_velocity = particle_ops.grid_to_particle(
-            particle_velocity, velocity, old_velocity, cell
+            particle_velocity, velocity, old_velocity, stencil
         )
 
         particles = particle_ops.advect_particles(particles, particle_velocity, dt)
