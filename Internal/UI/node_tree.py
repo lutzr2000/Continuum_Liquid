@@ -28,8 +28,10 @@ def build_node_categories():
             "CONTINUUM_LIQUID_NODES",
             "Continuum Liquid",
             items=[
-                NodeItem("CONTINUUM_LIQUID_SIMULATION_NODE"),
+                NodeItem("CONTINUUM_LIQUID_DOMAIN_NODE"),
                 NodeItem("CONTINUUM_LIQUID_OUTPUT_NODE"),
+                NodeItem("CONTINUUM_LIQUID_PHYSICS_NODE"),
+                NodeItem("CONTINUUM_LIQUID_SIMULATION_NODE"),
             ],
         )
     ]

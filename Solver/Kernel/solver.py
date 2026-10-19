@@ -14,19 +14,28 @@ from . import velocity_update
 FIELD_DTYPE = kernel_config.FIELD_DTYPE
 
 
-def solver(output_path):
+def solver(config):
+    simulation_config = config["simulation"]
+    domain_config = simulation_config["domain"]
+    domain_size = domain_config["size"]
+    physics_config = simulation_config["physics"]
+    water_config = physics_config["water"]
+    air_config = physics_config["air"]
+
     t_start = 0.0
     t_end = 10.0
     fps = 24
     dt = 1.0 / fps
 
-    Lx = 5
-    Ly = 5
-    Lz = 5
-    delta = 0.05
+    Lx = float(domain_size["x"])
+    Ly = float(domain_size["y"])
+    Lz = float(domain_size["z"])
+    delta = float(domain_config["resolution"])
 
-    rho_water = 1000.0
-    nu_water = 1.0e-6
+    rho_water = float(water_config["density"])
+    nu_water = float(water_config["viscosity"])
+    rho_air = float(air_config["density"])
+    nu_air = float(air_config["viscosity"])
 
     nx = int(Lx / delta)
     ny = int(Ly / delta)
@@ -35,7 +44,7 @@ def solver(output_path):
     grid_cell_count = nx * ny * nz
     dx = delta
 
-    jacobi_iterations = 100
+    jacobi_iterations = 50
     gravity = np.array([0.0, -9.81, 0.0], dtype=FIELD_DTYPE)
     fx = 0.0
     fy = 0.0
@@ -106,7 +115,7 @@ def solver(output_path):
         grid_shape,
     )
 
-    output_dir = Path(output_path).expanduser().resolve()
+    output_dir = Path(simulation_config["output_path"]).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     output_file = output_dir / "water_particles.usdc"
     total_frames = round((t_end - t_start) * fps)

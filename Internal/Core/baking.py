@@ -31,7 +31,7 @@ class CONTINUUM_LIQUID_OT_bake(bpy.types.Operator):
         try:
             config = export_config.build_config_dict(output_node)
             export_config.export_config_dict(config)
-            solver(config["simulation"]["output_path"])
+            solver(config)
         except Exception as exc:
             self.report({"ERROR"}, f"Bake failed: {exc}")
             return {"CANCELLED"}

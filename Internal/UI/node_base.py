@@ -11,6 +11,9 @@ class ContinuumLiquidBaseNode(bpy.types.Node):
     def _sync_node(self):
         pass
 
+    def _apply_node_style(self):
+        self.use_custom_color = False
+
     def init(self, _context):
         self._sync_node()
 
@@ -19,6 +22,13 @@ class ContinuumLiquidBaseNode(bpy.types.Node):
 
     def update(self):
         self._sync_node()
+
+    def _draw_group(self, layout, title, property_names):
+        box = layout.box()
+        box.label(text=title)
+        column = box.column(align=True)
+        for property_name in property_names:
+            column.prop(self, property_name)
 
     def _ensure_socket(self, collection, socket_type, name, multi_input=False):
         socket = collection.get(name)
