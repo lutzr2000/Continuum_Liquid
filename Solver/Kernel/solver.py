@@ -143,6 +143,17 @@ def solver(config: dict, timings=None):
     # partciles
     particles = helper.to_device(context, particles_host)
     particle_velocity = helper.to_device(context, particle_velocity_host)
+    (
+        particle_work,
+        particle_velocity_work,
+        particle_bin_counts,
+        particle_bin_scan_outputs,
+        particle_bin_scan_sums,
+    ) = particle_methods.create_particle_sort_buffers(
+        context,
+        grid_shape,
+        number_of_particles,
+    )
     particle_count = helper.device_array(context, grid_shape, dtype=np.int32)
 
     # velocity
@@ -173,7 +184,6 @@ def solver(config: dict, timings=None):
     )
 
     # flip
-    weight = helper.device_array(context, grid_shape)
     fluid_fraction = helper.device_array(context, grid_shape)
 
     # ------------output------------------
@@ -201,13 +211,24 @@ def solver(config: dict, timings=None):
 
         # ------------particle to grid-------------------
         with timings.section("solver", "particle_to_grid", queue):
-            (u, v, w), fluid_fraction = particle_methods.particle_to_grid(
+            (
+                particles,
+                particle_velocity,
+                particle_work,
+                particle_velocity_work,
+                (u, v, w),
+                fluid_fraction,
+            ) = particle_methods.particle_to_grid(
                 particles_kernels,
                 queue,
                 particles,
                 particle_velocity,
+                particle_work,
+                particle_velocity_work,
                 (u, v, w),
-                weight,
+                particle_bin_counts,
+                particle_bin_scan_outputs,
+                particle_bin_scan_sums,
                 particle_count,
                 fluid_fraction,
                 number_of_particles,
