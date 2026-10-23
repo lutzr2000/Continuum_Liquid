@@ -136,6 +136,9 @@ class CONTINUUM_LIQUID_OT_bake(bpy.types.Operator):
 
         self.job_result = None
         self.event_timer = None
+        self.cancel_requested = False
+        self.cancel_event = threading.Event()
+        config.setdefault("meta", {})["cancel_event"] = self.cancel_event
         settings = config["simulation"].get("settings") or {}
         self.start_frame = int(settings.get("start_frame", 1))
         self.total_frames = max(
@@ -185,6 +188,13 @@ class CONTINUUM_LIQUID_OT_bake(bpy.types.Operator):
         self.total_frames = max(1, int(message.get("total_frames", self.total_frames)))
 
     def modal(self, context, event):
+        if event.type == "ESC":
+            if not self.cancel_requested:
+                self.cancel_requested = True
+                self.cancel_event.set()
+                self.report({"INFO"}, "Bake cancellation requested")
+            return {"RUNNING_MODAL"}
+
         if event.type != "TIMER":
             return {"PASS_THROUGH"}
 
@@ -224,6 +234,10 @@ class CONTINUUM_LIQUID_OT_bake(bpy.types.Operator):
             self.output_node.last_bake_directory = str(self.bake_directory)
         except Exception as exc:
             self.report({"ERROR"}, f"Bake finished, but loading USD failed: {exc}")
+            return {"CANCELLED"}
+
+        if self.cancel_requested:
+            self.report({"INFO"}, "Bake cancelled; partial result loaded")
             return {"CANCELLED"}
 
         self.report({"INFO"}, "Bake finished")

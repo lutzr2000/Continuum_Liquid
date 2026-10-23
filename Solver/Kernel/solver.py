@@ -10,12 +10,14 @@ from . import kernel_config
 from . import output
 from . import particles as particle_methods
 from . import pressure_solve
+from . import timing
 from . import velocity_update
 
 FIELD_DTYPE = kernel_config.FIELD_DTYPE
 
 
-def solver(config: dict):
+@timing.profiled_run
+def solver(config: dict, timings=None):
     simulation = config.get("simulation") or {}
     settings = simulation.get("settings") or {}
 
@@ -72,6 +74,7 @@ def solver(config: dict):
     water = physics.get("water") or {}
     air = physics.get("air") or {}
     output_dir = Path(simulation["output_path"]).expanduser().resolve()
+    cancel_event = (config.get("meta") or {}).get("cancel_event")
 
     # ------------time-------------------
     start_frame = int(settings.get("start_frame", 1))
@@ -177,51 +180,58 @@ def solver(config: dict):
     # ------------time loop------------------
     t = 0
     for solver_step in range(total_solver_steps):
+        if cancel_event is not None and cancel_event.is_set():
+            print("Bake cancellation requested. Stopping the simulation cleanly...")
+            break
+
         t += solver_step * dt
         output_frame = (solver_step + 1) // steps_per_frame
         substep_index = solver_step % steps_per_frame
 
         # ------------particle to grid-------------------
-        (u, v, w), fluid_fraction = particle_methods.particle_to_grid(
-            particles_kernels,
-            queue,
-            particles,
-            particle_velocity,
-            (u, v, w),
-            weight,
-            particle_count,
-            fluid_fraction,
-            number_of_particles,
-            grid_shape,
-            delta,
-            particles_per_cell,
-        )
+        with timings.section("solver", "particle_to_grid", queue):
+            (u, v, w), fluid_fraction = particle_methods.particle_to_grid(
+                particles_kernels,
+                queue,
+                particles,
+                particle_velocity,
+                (u, v, w),
+                weight,
+                particle_count,
+                fluid_fraction,
+                number_of_particles,
+                grid_shape,
+                delta,
+                particles_per_cell,
+            )
 
         # ------------grid bc-------------------
-        u, v, w = boundary_conditions.grid_domain_bc(
-            boundary_conditions_kernels,
-            queue,
-            (u, v, w),
-            grid_shape,
-        )
+        with timings.section("solver", "grid_domain_bc", queue):
+            u, v, w = boundary_conditions.grid_domain_bc(
+                boundary_conditions_kernels,
+                queue,
+                (u, v, w),
+                grid_shape,
+            )
 
         # ------------velocity update-------------------
-        u_work, v_work, w_work = velocity_update.update_velocity(
-            velocity_update_kernels,
-            queue,
-            (u, v, w),
-            (u_work, v_work, w_work),
-            fluid_fraction,
-            gravity,
-            fx,
-            fy,
-            fz,
-            rho_water,
-            nu_water,
-            delta,
-            dt,
-            grid_shape,
-        )
+        with timings.section("solver", "update_velocity", queue):
+            u_work, v_work, w_work = velocity_update.update_velocity(
+                velocity_update_kernels,
+                queue,
+                (u, v, w),
+                (u_work, v_work, w_work),
+                fluid_fraction,
+                gravity,
+                fx,
+                fy,
+                fz,
+                rho_water,
+                nu_water,
+                delta,
+                dt,
+                grid_shape,
+            )
 
         # ------------swap-------------------
         u, u_work = u_work, u
@@ -229,77 +239,85 @@ def solver(config: dict):
         w, w_work = w_work, w
 
         # ------------pressure solve-------------------
-        pressure, pressure_work = pressure_solve.pressure_solve(
-            pressure_solve_kernels,
-            boundary_conditions_kernels,
-            queue,
-            (u, v, w),
-            fluid_fraction,
-            pressure,
-            pressure_work,
-            pressure_rhs,
-            pressure_diagonal,
-            delta,
-            dt,
-            rho_water,
-            jacobi_iterations,
-            grid_shape,
-        )
+        with timings.section("solver", "pressure_solve", queue):
+            pressure, pressure_work = pressure_solve.pressure_solve(
+                pressure_solve_kernels,
+                boundary_conditions_kernels,
+                queue,
+                (u, v, w),
+                fluid_fraction,
+                pressure,
+                pressure_work,
+                pressure_rhs,
+                pressure_diagonal,
+                delta,
+                dt,
+                rho_water,
+                jacobi_iterations,
+                grid_shape,
+            )
 
         # ------------pressure correction-------------------
-        u, v, w = pressure_solve.pressure_correction(
-            pressure_solve_kernels,
-            queue,
-            (u, v, w),
-            pressure,
-            delta,
-            dt,
-            rho_water,
-            grid_shape,
-        )
+        with timings.section("solver", "pressure_correction", queue):
+            u, v, w = pressure_solve.pressure_correction(
+                pressure_solve_kernels,
+                queue,
+                (u, v, w),
+                pressure,
+                delta,
+                dt,
+                rho_water,
+                grid_shape,
+            )
 
         # ------------grid to particle-------------------
-        particle_velocity = particle_methods.grid_to_particle(
-            particles_kernels,
-            queue,
-            particle_velocity,
-            particles,
-            (u, v, w),
-            (u_work, v_work, w_work),
-            number_of_particles,
-            grid_shape,
-            delta,
-        )
+        with timings.section("solver", "grid_to_particle", queue):
+            particle_velocity = particle_methods.grid_to_particle(
+                particles_kernels,
+                queue,
+                particle_velocity,
+                particles,
+                (u, v, w),
+                (u_work, v_work, w_work),
+                number_of_particles,
+                grid_shape,
+                delta,
+            )
 
         # ------------advect particles-------------------
-        particles = particle_methods.advect_particles(
-            particles_kernels,
-            queue,
-            particles,
-            particle_velocity,
-            number_of_particles,
-            dt,
-        )
+        with timings.section("solver", "advect_particles", queue):
+            particles = particle_methods.advect_particles(
+                particles_kernels,
+                queue,
+                particles,
+                particle_velocity,
+                number_of_particles,
+                dt,
+            )
 
         # ------------particle boundary conditions-------------------
-        particles, particle_velocity = boundary_conditions.particle_domain_bc(
-            boundary_conditions_kernels,
-            queue,
-            particles,
-            particle_velocity,
-            number_of_particles,
-            grid_shape,
-            delta,
-        )
+        with timings.section("solver", "particle_domain_bc", queue):
+            particles, particle_velocity = boundary_conditions.particle_domain_bc(
+                boundary_conditions_kernels,
+                queue,
+                particles,
+                particle_velocity,
+                number_of_particles,
+                grid_shape,
+                delta,
+            )
 
         # ------------output-------------------
         if substep_index == steps_per_frame - 1:
-            cl.enqueue_copy(queue, particles_host, particles).wait()
-            output.write_particles(
-                usd_points,
-                particles_host,
-                frame=start_frame + output_frame,
-            )
+            with timings.section("transfer", "particles_to_host", queue):
+                cl.enqueue_copy(queue, particles_host, particles).wait()
+
+            with timings.section("output", "write_particles"):
+                output.write_particles(
+                    usd_points,
+                    particles_host,
+                    frame=start_frame + output_frame,
+                )
             emit_message(
                 {
                     "type": "stats",
