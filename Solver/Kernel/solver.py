@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 import pyopencl as cl
 
+from ..General.main import emit_message
 from . import boundary_conditions
 from . import helper
 from . import kernel_config
@@ -22,10 +23,14 @@ def solver(config):
     water_config = physics_config["water"]
     air_config = physics_config["air"]
 
+    settings = simulation_config.get("settings") or {}
+    start_frame = int(settings.get("start_frame", 1))
+    end_frame = int(settings.get("end_frame", 250))
+    fps = int(settings.get("fps", 24))
+    substeps = max(0, int(settings.get("substeps", 1)))
+    steps_per_frame = substeps + 1
     t_start = 0.0
-    t_end = 10.0
-    fps = 24
-    dt = 1.0 / fps
+    dt = 1.0 / (fps * steps_per_frame)
 
     Lx = float(domain_size["x"])
     Ly = float(domain_size["y"])
@@ -45,7 +50,7 @@ def solver(config):
     dx = delta
 
     jacobi_iterations = 50
-    gravity = np.array([0.0, -9.81, 0.0], dtype=FIELD_DTYPE)
+    gravity = np.array([0.0, 0.0, -9.81], dtype=FIELD_DTYPE)
     fx = 0.0
     fy = 0.0
     fz = 0.0
@@ -118,16 +123,25 @@ def solver(config):
     output_dir = Path(simulation_config["output_path"]).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     output_file = output_dir / "water_particles.usdc"
-    total_frames = round((t_end - t_start) * fps)
+    total_frames = max(0, end_frame - start_frame)
     stage, usd_points = output.create_usd(
-        filepath=output_file, fps=fps, start_frame=1, end_frame=total_frames + 1
+        filepath=output_file,
+        fps=fps,
+        start_frame=start_frame,
+        end_frame=end_frame,
     )
-    output.write_particles(usd_points, particles_host, frame=1)
+    output.write_particles(usd_points, particles_host, frame=start_frame)
+    emit_message({"type": "stats", "frame": 0, "total_frames": total_frames})
 
-    for step in range(total_frames):
-        t = t_start + step * dt
+    total_solver_steps = total_frames * steps_per_frame
+    for solver_step in range(total_solver_steps):
+        t = t_start + solver_step * dt
+        output_frame = (solver_step + 1) // steps_per_frame
+        substep_index = solver_step % steps_per_frame
+        simulation_frame = solver_step // steps_per_frame + 1
         print(
-            f"Frame {step + 1}/{total_frames} | "
+            f"Frame {simulation_frame}/{total_frames} | "
+            f"Substep {substep_index + 1}/{steps_per_frame} | "
             f"Time: {t:.3f}s | "
             f"Particles: {number_of_particles}"
         )
@@ -227,7 +241,19 @@ def solver(config):
             dx,
         )
 
-        cl.enqueue_copy(queue, particles_host, particles).wait()
-        output.write_particles(usd_points, particles_host, frame=step + 2)
+        if substep_index == steps_per_frame - 1:
+            cl.enqueue_copy(queue, particles_host, particles).wait()
+            output.write_particles(
+                usd_points,
+                particles_host,
+                frame=start_frame + output_frame,
+            )
+            emit_message(
+                {
+                    "type": "stats",
+                    "frame": output_frame,
+                    "total_frames": total_frames,
+                }
+            )
 
     output.save_usd(stage)

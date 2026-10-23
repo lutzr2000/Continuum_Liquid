@@ -1,11 +1,12 @@
 import bpy
 from nodeitems_utils import register_node_categories, unregister_node_categories
 
-from .Core.baking import CONTINUUM_LIQUID_OT_bake
+from .Core import baking, viewer
 from .UI.node_output import ContinuumLiquidOutputNode
 from .UI.node_domain import ContinuumLiquidDomainNode
 from .UI.node_physics import ContinuumLiquidPhysicsNode
 from .UI.node_simulation import ContinuumLiquidSimulationNode
+from .UI.node_viewer import ContinuumLiquidViewerNode
 from .UI.node_tree import (
     ContinuumLiquidNodeTree,
     NODE_CATEGORIES_ID,
@@ -27,8 +28,10 @@ classes = (
     ContinuumLiquidDomainNode,
     ContinuumLiquidPhysicsNode,
     ContinuumLiquidSimulationNode,
+    ContinuumLiquidViewerNode,
     ContinuumLiquidOutputNode,
-    CONTINUUM_LIQUID_OT_bake,
+    *viewer.classes,
+    *baking.classes,
 )
 
 
@@ -45,11 +48,16 @@ def safe_register_class(cls):
 
 
 def reset_node_body_colors():
-    for node_tree in bpy.data.node_groups:
+    node_groups = getattr(bpy.data, "node_groups", None)
+    if node_groups is None:
+        return 0.1
+
+    for node_tree in node_groups:
         if node_tree.bl_idname != ContinuumLiquidNodeTree.bl_idname:
             continue
         for node in node_tree.nodes:
             node.use_custom_color = False
+    return None
 
 
 def register():
@@ -62,9 +70,19 @@ def register():
         pass
 
     register_node_categories(NODE_CATEGORIES_ID, build_node_categories())
-    reset_node_body_colors()
+    if (
+        reset_node_body_colors() is not None
+        and not bpy.app.timers.is_registered(reset_node_body_colors)
+    ):
+        bpy.app.timers.register(reset_node_body_colors, first_interval=0.1)
+
 
 def unregister():
+    viewer.disable_domain_preview()
+
+    if bpy.app.timers.is_registered(reset_node_body_colors):
+        bpy.app.timers.unregister(reset_node_body_colors)
+
     try:
         unregister_node_categories(NODE_CATEGORIES_ID)
     except Exception:

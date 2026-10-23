@@ -1,5 +1,5 @@
 import bpy
-from bpy.props import EnumProperty, FloatProperty, IntProperty
+from bpy.props import EnumProperty, IntProperty
 
 from . import node_base, sockets
 
@@ -20,7 +20,7 @@ class ContinuumLiquidSimulationNode(node_base.ContinuumLiquidBaseNode):
     bl_width_min = 240.0
     bl_width_max = 420.0
     property_groups = (
-        ("Time", ("start_frame", "end_frame", "cfl")),
+        ("Time", ("start_frame", "end_frame", "substeps")),
         ("Solver", ("iterations",)),
     )
 
@@ -49,14 +49,12 @@ class ContinuumLiquidSimulationNode(node_base.ContinuumLiquidBaseNode):
         options=set(),
         update=_update_end_frame,
     )  # type: ignore
-    cfl: FloatProperty(
-        name="CFL",
-        default=10.0,
-        min=0.1,
-        soft_min=0.1,
-        soft_max=30.0,
-        precision=3,
-        description="Maximum CFL number used for adaptive timesteps",
+    substeps: IntProperty(
+        name="Substeps",
+        default=1,
+        min=0,
+        soft_max=10,
+        description="Additional solver steps per output frame",
         options=set(),
     )  # type: ignore
     iterations: IntProperty(

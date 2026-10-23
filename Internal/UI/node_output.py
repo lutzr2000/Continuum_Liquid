@@ -5,6 +5,7 @@ import bpy
 from bpy.props import IntProperty, StringProperty
 
 from . import node_base, sockets
+from ..Core import baking as bake_main
 
 
 INVALID_OUTPUT_PATH_MESSAGE = "Invalid output path"
@@ -57,6 +58,11 @@ class ContinuumLiquidOutputNode(node_base.ContinuumLiquidBaseNode):
         options=set(),
     )  # type: ignore
 
+    last_bake_directory: StringProperty(
+        default="",
+        options={"HIDDEN"},
+    )  # type: ignore
+
     def _sync_node(self):
         self._ensure_socket(
             self.inputs,
@@ -82,7 +88,16 @@ class ContinuumLiquidOutputNode(node_base.ContinuumLiquidBaseNode):
         layout.separator()
         row = layout.row()
         validation_error = output_path_valid(self.output_path)
-        row.enabled = validation_error is None
-        row.operator("continuum_liquid.bake", text="Bake", icon="RENDER_STILL")
+        row.enabled = validation_error is None and not bake_main.bake_running
+        if (
+            validation_error is None
+            and bake_main.output_node_has_baked_data(self)
+            and not bake_main.bake_running
+        ):
+            row.operator("continuum_liquid.free_bake", text="Free Bake", icon="TRASH")
+        else:
+            row.operator("continuum_liquid.bake", text="Bake", icon="RENDER_STILL")
         if validation_error is not None:
             layout.label(text=validation_error, icon="INFO")
+        elif bake_main.bake_running:
+            layout.label(text="Bake is running", icon="INFO")

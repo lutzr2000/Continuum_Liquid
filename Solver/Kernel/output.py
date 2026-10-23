@@ -13,6 +13,8 @@ def create_usd(filepath, fps, start_frame, end_frame):
     stage.SetEndTimeCode(end_frame)
     stage.SetTimeCodesPerSecond(fps)
     stage.SetFramesPerSecond(fps)
+    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
+    UsdGeom.SetStageMetersPerUnit(stage, 1.0)
 
     points = UsdGeom.Points.Define(stage, "/WaterParticles")
     stage.SetDefaultPrim(points.GetPrim())

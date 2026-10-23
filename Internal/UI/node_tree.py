@@ -32,6 +32,7 @@ def build_node_categories():
                 NodeItem("CONTINUUM_LIQUID_OUTPUT_NODE"),
                 NodeItem("CONTINUUM_LIQUID_PHYSICS_NODE"),
                 NodeItem("CONTINUUM_LIQUID_SIMULATION_NODE"),
+                NodeItem("CONTINUUM_LIQUID_VIEWER_NODE"),
             ],
         )
     ]

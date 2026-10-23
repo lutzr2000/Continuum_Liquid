@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 
 import bpy
@@ -55,6 +56,13 @@ def build_config_dict(output_node):
         "simulation": {
             "node_tree": output_node.id_data.name,
             "output_path": str(output_path),
+            "settings": {
+                "solver_backend": str(simulation_node.solver_backend),
+                "start_frame": int(simulation_node.start_frame),
+                "end_frame": int(simulation_node.end_frame),
+                "fps": int(output_node.fps),
+                "substeps": int(simulation_node.substeps),
+            },
             "domain": {
                 "resolution": float(domain_node.resolution),
                 "size": {
@@ -78,6 +86,10 @@ def build_config_dict(output_node):
 
 
 def export_config_dict(config_dict):
-    output_path = Path(config_dict["simulation"]["output_path"])
-    output_path.mkdir(parents=True, exist_ok=True)
-    return config_dict
+    output_root = Path(config_dict["simulation"]["output_path"])
+    output_root.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    bake_directory = output_root / f"Bake_run_{timestamp}"
+    bake_directory.mkdir(parents=False, exist_ok=False)
+    config_dict["simulation"]["output_path"] = str(bake_directory.resolve())
+    return bake_directory, config_dict
