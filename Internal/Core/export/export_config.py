@@ -62,6 +62,7 @@ def build_config_dict(output_node):
                 "end_frame": int(simulation_node.end_frame),
                 "fps": int(output_node.fps),
                 "substeps": int(simulation_node.substeps),
+                "iterations": int(simulation_node.iterations),
             },
             "domain": {
                 "resolution": float(domain_node.resolution),

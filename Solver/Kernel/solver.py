@@ -7,6 +7,7 @@ from ..General.main import emit_message
 from . import boundary_conditions
 from . import helper
 from . import kernel_config
+from . import multigrid
 from . import output
 from . import particles as particle_methods
 from . import pressure_solve
@@ -49,6 +50,11 @@ def solver(config: dict, timings=None):
         kernel_path / "pressure_solve.cl",
     )
 
+    multigrid_kernels = helper.load_program(
+        context,
+        kernel_path / "multigrid.cl",
+    )
+
     boundary_conditions_kernels = helper.load_program(
         context,
         kernel_path / "boundary_conditions.cl",
@@ -58,6 +64,7 @@ def solver(config: dict, timings=None):
         particles_kernels,
         velocity_update_kernels,
         pressure_solve_kernels,
+        multigrid_kernels,
         boundary_conditions_kernels,
     )
     kernel_config.constrain_to_compiled_kernels(
@@ -106,7 +113,7 @@ def solver(config: dict, timings=None):
     rho_air = float(air["density"])
     nu_air = float(air["viscosity"])
 
-    jacobi_iterations = 50
+    multigrid_cycles = max(1, int(settings.get("iterations", 1)))
     gravity = np.array([0.0, 0.0, -9.81], dtype=FIELD_DTYPE)
     fx = 0.0
     fy = 0.0
@@ -114,7 +121,7 @@ def solver(config: dict, timings=None):
 
     # ------------particles------------------
     x = np.arange(1, nx - 1)[:, None, None]
-    initial_fluid = np.broadcast_to(x < 0.2 * nx, (nx - 2, ny - 2, nz - 2))
+    initial_fluid = np.broadcast_to(x < 0.5 * nx, (nx - 2, ny - 2, nz - 2))
     cells = np.argwhere(initial_fluid) + 1
 
     particles_per_axis = 2
@@ -149,21 +156,25 @@ def solver(config: dict, timings=None):
 
     # pressure
     pressure = helper.device_array(context, grid_shape)
-    pressure_work = helper.device_array(context, grid_shape)
     pressure_rhs = helper.device_array(context, grid_shape)
-    pressure_diagonal = helper.device_array(context, grid_shape)
+
+    # ------------multigrid------------------
+    (
+        multigrid_pressure_levels,
+        multigrid_rhs_levels,
+        multigrid_mask_levels,
+        multigrid_delta_levels,
+        multigrid_level_shapes,
+    ) = multigrid.create_multigrid_levels(
+        context,
+        grid_shape,
+        delta,
+        min_size=8,
+    )
 
     # flip
     weight = helper.device_array(context, grid_shape)
     fluid_fraction = helper.device_array(context, grid_shape)
-
-    # ------------boundary conditions------------------
-    boundary_conditions.create_pressure_boundary(
-        boundary_conditions_kernels,
-        queue,
-        pressure_diagonal,
-        grid_shape,
-    )
 
     # ------------output------------------
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -240,20 +251,24 @@ def solver(config: dict, timings=None):
 
         # ------------pressure solve-------------------
         with timings.section("solver", "pressure_solve", queue):
-            pressure, pressure_work = pressure_solve.pressure_solve(
+            pressure = pressure_solve.pressure_solve(
                 pressure_solve_kernels,
+                multigrid_kernels,
                 boundary_conditions_kernels,
                 queue,
                 (u, v, w),
                 fluid_fraction,
                 pressure,
-                pressure_work,
                 pressure_rhs,
-                pressure_diagonal,
+                multigrid_pressure_levels,
+                multigrid_rhs_levels,
+                multigrid_mask_levels,
+                multigrid_delta_levels,
+                multigrid_level_shapes,
                 delta,
                 dt,
                 rho_water,
-                jacobi_iterations,
+                multigrid_cycles,
                 grid_shape,
             )
 

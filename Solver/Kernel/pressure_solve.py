@@ -3,24 +3,29 @@ import numpy as np
 from . import boundary_conditions
 from . import helper
 from . import kernel_config
+from . import multigrid
 
 FIELD_DTYPE = kernel_config.FIELD_DTYPE
 
 
 def pressure_solve(
     kernels,
+    multigrid_kernels,
     boundary_kernels,
     queue,
     velocity,
     fluid_fraction,
     pressure,
-    pressure_work,
     rhs,
-    diagonal,
+    p_levels,
+    b_levels,
+    mask_levels,
+    delta_levels,
+    multigrid_level_shapes,
     dx,
     dt,
     rho,
-    jacobi_iterations,
+    num_vcycles,
     grid_shape,
 ):
     nx, ny, nz = grid_shape
@@ -28,7 +33,6 @@ def pressure_solve(
     u, v, w = velocity
 
     helper.fill_device(queue, pressure, 0.0)
-    helper.fill_device(queue, pressure_work, 0.0)
     kernels["pressure_rhs"](
         queue,
         (grid_cell_count,),
@@ -45,25 +49,28 @@ def pressure_solve(
         np.int32(nz),
     )
 
-    for _ in range(jacobi_iterations):
-        kernels["pressure_solve"](
+    for _ in range(num_vcycles):
+        multigrid.v_cycle(
+            multigrid_kernels,
             queue,
-            (grid_cell_count,),
-            None,
+            0,
+            p_levels,
+            b_levels,
+            mask_levels,
             pressure,
-            pressure_work,
             rhs,
-            diagonal,
             fluid_fraction,
-            FIELD_DTYPE(dx * dx),
-            np.int32(nx),
-            np.int32(ny),
-            np.int32(nz),
+            dx,
+            delta_levels,
+            multigrid_level_shapes,
+            grid_shape,
+            pre_smooth=2,
+            post_smooth=4,
+            coarse_smooth_iterations=20,
         )
-        pressure, pressure_work = pressure_work, pressure
 
     boundary_conditions.neumann_domain_bc(boundary_kernels, queue, pressure, grid_shape)
-    return pressure, pressure_work
+    return pressure
 
 
 def pressure_correction(
