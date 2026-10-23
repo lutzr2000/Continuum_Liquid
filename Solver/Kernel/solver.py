@@ -8,7 +8,7 @@ from . import boundary_conditions
 from . import helper
 from . import kernel_config
 from . import output
-from . import particles as particle_ops
+from . import particles as particle_methods
 from . import pressure_solve
 from . import velocity_update
 
@@ -96,8 +96,6 @@ def solver(config: dict):
     ny = int(Ly / delta)
     nz = int(Lz / delta)
     grid_shape = (nx, ny, nz)
-    grid_cell_count = nx * ny * nz
-    dx = delta
 
     # ------------physics------------------
     rho_water = float(water["density"])
@@ -125,26 +123,36 @@ def solver(config: dict):
     ).reshape(-1, 3)
 
     particles_host = np.ascontiguousarray(
-        (cells[:, None, :] + offsets[None, :, :]).reshape(-1, 3) * dx,
+        (cells[:, None, :] + offsets[None, :, :]).reshape(-1, 3) * delta,
         dtype=FIELD_DTYPE,
     )
     particle_velocity_host = np.zeros_like(particles_host)
     number_of_particles = len(particles_host)
 
     # ------------device arrays------------------
+    # partciles
     particles = helper.to_device(context, particles_host)
     particle_velocity = helper.to_device(context, particle_velocity_host)
-
-    velocity = tuple(helper.device_array(context, grid_shape) for _ in range(3))
-    velocity_work = tuple(helper.device_array(context, grid_shape) for _ in range(3))
-    old_velocity = tuple(helper.device_array(context, grid_shape) for _ in range(3))
-    weight = helper.device_array(context, grid_shape)
     particle_count = helper.device_array(context, grid_shape, dtype=np.int32)
-    fluid_fraction = helper.device_array(context, grid_shape)
+
+    # velocity
+    u = helper.device_array(context, grid_shape)
+    v = helper.device_array(context, grid_shape)
+    w = helper.device_array(context, grid_shape)
+
+    u_work = helper.device_array(context, grid_shape)
+    v_work = helper.device_array(context, grid_shape)
+    w_work = helper.device_array(context, grid_shape)
+
+    # pressure
     pressure = helper.device_array(context, grid_shape)
     pressure_work = helper.device_array(context, grid_shape)
     pressure_rhs = helper.device_array(context, grid_shape)
     pressure_diagonal = helper.device_array(context, grid_shape)
+
+    # flip
+    weight = helper.device_array(context, grid_shape)
+    fluid_fraction = helper.device_array(context, grid_shape)
 
     # ------------boundary conditions------------------
     boundary_conditions.create_pressure_boundary(
@@ -167,38 +175,42 @@ def solver(config: dict):
     emit_message({"type": "stats", "frame": 0, "total_frames": total_frames})
 
     # ------------time loop------------------
-    t= 0
+    t = 0
     for solver_step in range(total_solver_steps):
         t += solver_step * dt
         output_frame = (solver_step + 1) // steps_per_frame
         substep_index = solver_step % steps_per_frame
 
-        velocity, fluid_fraction = particle_ops.particle_to_grid(
+        # ------------particle to grid-------------------
+        (u, v, w), fluid_fraction = particle_methods.particle_to_grid(
             particles_kernels,
             queue,
             particles,
             particle_velocity,
-            velocity,
+            (u, v, w),
             weight,
             particle_count,
             fluid_fraction,
             number_of_particles,
             grid_shape,
-            dx,
+            delta,
             particles_per_cell,
         )
-        velocity = boundary_conditions.grid_domain_bc(
-            boundary_conditions_kernels, queue, velocity, grid_shape
+
+        # ------------grid bc-------------------
+        u, v, w = boundary_conditions.grid_domain_bc(
+            boundary_conditions_kernels,
+            queue,
+            (u, v, w),
+            grid_shape,
         )
 
-        for old_component, component in zip(old_velocity, velocity):
-            cl.enqueue_copy(queue, old_component, component)
-
-        velocity_work = velocity_update.update_velocity(
+        # ------------velocity update-------------------
+        u_work, v_work, w_work = velocity_update.update_velocity(
             velocity_update_kernels,
             queue,
-            velocity,
-            velocity_work,
+            (u, v, w),
+            (u_work, v_work, w_work),
             fluid_fraction,
             gravity,
             fx,
@@ -206,51 +218,61 @@ def solver(config: dict):
             fz,
             rho_water,
             nu_water,
-            dx,
+            delta,
             dt,
             grid_shape,
         )
-        velocity, velocity_work = velocity_work, velocity
 
+        # ------------swap-------------------
+        u, u_work = u_work, u
+        v, v_work = v_work, v
+        w, w_work = w_work, w
+
+        # ------------pressure solve-------------------
         pressure, pressure_work = pressure_solve.pressure_solve(
             pressure_solve_kernels,
             boundary_conditions_kernels,
             queue,
-            velocity,
+            (u, v, w),
             fluid_fraction,
             pressure,
             pressure_work,
             pressure_rhs,
             pressure_diagonal,
-            dx,
+            delta,
             dt,
             rho_water,
             jacobi_iterations,
             grid_shape,
         )
-        velocity = pressure_solve.pressure_correction(
+
+        # ------------pressure correction-------------------
+        u, v, w = pressure_solve.pressure_correction(
             pressure_solve_kernels,
             queue,
-            velocity,
+            (u, v, w),
             pressure,
-            dx,
+            delta,
             dt,
             rho_water,
             grid_shape,
         )
 
-        particle_velocity = particle_ops.grid_to_particle(
+        # ------------grid to particle-------------------
+        particle_velocity = particle_methods.grid_to_particle(
             particles_kernels,
             queue,
             particle_velocity,
             particles,
-            velocity,
-            old_velocity,
+            (u, v, w),
+            (u_work, v_work, w_work),
             number_of_particles,
             grid_shape,
-            dx,
+            delta,
         )
-        particles = particle_ops.advect_particles(
+
+        # ------------advect particles-------------------
+        particles = particle_methods.advect_particles(
             particles_kernels,
             queue,
             particles,
@@ -258,6 +280,8 @@ def solver(config: dict):
             number_of_particles,
             dt,
         )
+
+        # ------------particle boundary conditions-------------------
         particles, particle_velocity = boundary_conditions.particle_domain_bc(
             boundary_conditions_kernels,
             queue,
@@ -265,9 +289,10 @@ def solver(config: dict):
             particle_velocity,
             number_of_particles,
             grid_shape,
-            dx,
+            delta,
         )
 
+        # ------------output-------------------
         if substep_index == steps_per_frame - 1:
             cl.enqueue_copy(queue, particles_host, particles).wait()
             output.write_particles(
