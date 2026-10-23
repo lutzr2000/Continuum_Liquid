@@ -270,6 +270,17 @@ def solver(config: dict, timings=None):
         v, v_work = v_work, v
         w, w_work = w_work, w
 
+        # Forces and viscosity are evaluated on every interior entry, which
+        # includes the positive-side MAC wall faces.  Close them again before
+        # constructing the pressure RHS.
+        with timings.section("solver", "updated_grid_domain_bc", queue):
+            u, v, w = boundary_conditions.grid_domain_bc(
+                boundary_conditions_kernels,
+                queue,
+                (u, v, w),
+                grid_shape,
+            )
+
         # ------------pressure solve-------------------
         with timings.section("solver", "pressure_solve", queue):
             pressure = pressure_solve.pressure_solve(
@@ -303,6 +314,17 @@ def solver(config: dict, timings=None):
                 delta,
                 dt,
                 rho_water,
+                grid_shape,
+            )
+
+        # Projection changes the face velocities, including solid-wall faces.
+        # Re-apply the MAC boundary condition before transferring back to the
+        # particles so no normal velocity can survive at the domain wall.
+        with timings.section("solver", "projected_grid_domain_bc", queue):
+            u, v, w = boundary_conditions.grid_domain_bc(
+                boundary_conditions_kernels,
+                queue,
+                (u, v, w),
                 grid_shape,
             )
 

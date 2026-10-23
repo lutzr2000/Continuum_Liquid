@@ -9,6 +9,23 @@ inline float3 interpolation_fraction(const float3 position, const float inv_dx, 
     return clamp(position * inv_dx - 0.5f - convert_float3(base), 0.0f, 1.0f);
 }
 
+inline int3 staggered_interpolation_base(const float3 position,
+                                         const float inv_dx,
+                                         const float3 offset,
+                                         const int nx,
+                                         const int ny,
+                                         const int nz) {
+    const int3 base = convert_int3_rtn(position * inv_dx - offset);
+    return clamp(base, (int3)(0), (int3)(nx - 2, ny - 2, nz - 2));
+}
+
+inline float3 staggered_interpolation_fraction(const float3 position,
+                                               const float inv_dx,
+                                               const float3 offset,
+                                               const int3 base) {
+    return clamp(position * inv_dx - offset - convert_float3(base), 0.0f, 1.0f);
+}
+
 inline float interpolation_weight(const float3 fraction, const int ox, const int oy, const int oz) {
     const float wx = ox ? fraction.x : 1.0f - fraction.x;
     const float wy = oy ? fraction.y : 1.0f - fraction.y;
@@ -145,30 +162,43 @@ __kernel void particle_to_grid_gather(__global const float *particles,
 
     const int3 cell = grid_coordinates(index, ny, nz);
     float3 velocity_sum = (float3)(0.0f);
-    float weight_sum = 0.0f;
+    float3 weight_sum = (float3)(0.0f);
 
-    for (int ox = 0; ox <= 1; ++ox) {
-        const int base_x = cell.x - ox;
+    // The pressure operators use a MAC layout.  u, v and w therefore live at
+    // (i+1,j+.5,k+.5), (i+.5,j+1,k+.5), and (i+.5,j+.5,k+1).
+    // Particle bins are cell-centred, so inspect the adjacent 3^3 bins and
+    // evaluate each component's staggered trilinear weight explicitly.
+    const float3 grid_position = convert_float3(cell);
+    const float3 u_position = grid_position + (float3)(1.0f, 0.5f, 0.5f);
+    const float3 v_position = grid_position + (float3)(0.5f, 1.0f, 0.5f);
+    const float3 w_position = grid_position + (float3)(0.5f, 0.5f, 1.0f);
+    for (int ox = -1; ox <= 1; ++ox) {
+        const int base_x = cell.x + ox;
         if (base_x < 0 || base_x >= nx - 1)
             continue;
-        for (int oy = 0; oy <= 1; ++oy) {
-            const int base_y = cell.y - oy;
+        for (int oy = -1; oy <= 1; ++oy) {
+            const int base_y = cell.y + oy;
             if (base_y < 0 || base_y >= ny - 1)
                 continue;
-            for (int oz = 0; oz <= 1; ++oz) {
-                const int base_z = cell.z - oz;
+            for (int oz = -1; oz <= 1; ++oz) {
+                const int base_z = cell.z + oz;
                 if (base_z < 0 || base_z >= nz - 1)
                     continue;
 
-                const int3 base = (int3)(base_x, base_y, base_z);
                 const int bin = grid_index(base_x, base_y, base_z, ny, nz);
                 const int begin = bin_offsets[bin];
                 const int end = begin + bin_counts[bin];
                 for (int particle_index = begin; particle_index < end; ++particle_index) {
                     const int particle_offset = 3 * particle_index;
                     const float3 position = vload3(0, particles + particle_offset);
-                    const float3 fraction = interpolation_fraction(position, inv_dx, base);
-                    const float weight = interpolation_weight(fraction, ox, oy, oz);
+                    const float3 p = position * inv_dx;
+                    const float3 wu_axis = max((float3)(0.0f), 1.0f - fabs(p - u_position));
+                    const float3 wv_axis = max((float3)(0.0f), 1.0f - fabs(p - v_position));
+                    const float3 ww_axis = max((float3)(0.0f), 1.0f - fabs(p - w_position));
+                    const float3 weight =
+                        (float3)(wu_axis.x * wu_axis.y * wu_axis.z,
+                                 wv_axis.x * wv_axis.y * wv_axis.z,
+                                 ww_axis.x * ww_axis.y * ww_axis.z);
                     velocity_sum += weight * vload3(0, particle_velocity + particle_offset);
                     weight_sum += weight;
                 }
@@ -176,8 +206,10 @@ __kernel void particle_to_grid_gather(__global const float *particles,
         }
     }
 
-    const float inv_weight = weight_sum > 0.0f ? 1.0f / weight_sum : 0.0f;
-    const float3 grid_velocity = velocity_sum * inv_weight;
+    const float3 grid_velocity =
+        (float3)(weight_sum.x > 0.0f ? velocity_sum.x / weight_sum.x : 0.0f,
+                 weight_sum.y > 0.0f ? velocity_sum.y / weight_sum.y : 0.0f,
+                 weight_sum.z > 0.0f ? velocity_sum.z / weight_sum.z : 0.0f);
     u[index] = grid_velocity.x;
     v[index] = grid_velocity.y;
     w[index] = grid_velocity.z;
@@ -203,12 +235,19 @@ __kernel void grid_to_particle(__global float *particle_velocity,
 
     const int offset = 3 * particle_index;
     const float3 position = vload3(0, particles + offset);
-    const int3 base = interpolation_base(position, inv_dx, nx, ny, nz);
-    const float3 fraction = interpolation_fraction(position, inv_dx, base);
+    const float3 u_offset = (float3)(1.0f, 0.5f, 0.5f);
+    const float3 v_offset = (float3)(0.5f, 1.0f, 0.5f);
+    const float3 w_offset = (float3)(0.5f, 0.5f, 1.0f);
+    const int3 u_base = staggered_interpolation_base(position, inv_dx, u_offset, nx, ny, nz);
+    const int3 v_base = staggered_interpolation_base(position, inv_dx, v_offset, nx, ny, nz);
+    const int3 w_base = staggered_interpolation_base(position, inv_dx, w_offset, nx, ny, nz);
+    const float3 u_fraction = staggered_interpolation_fraction(position, inv_dx, u_offset, u_base);
+    const float3 v_fraction = staggered_interpolation_fraction(position, inv_dx, v_offset, v_base);
+    const float3 w_fraction = staggered_interpolation_fraction(position, inv_dx, w_offset, w_base);
     const float3 velocity_change =
-        (float3)(sample_field(u, base, fraction, ny, nz) - sample_field(old_u, base, fraction, ny, nz),
-                 sample_field(v, base, fraction, ny, nz) - sample_field(old_v, base, fraction, ny, nz),
-                 sample_field(w, base, fraction, ny, nz) - sample_field(old_w, base, fraction, ny, nz));
+        (float3)(sample_field(u, u_base, u_fraction, ny, nz) - sample_field(old_u, u_base, u_fraction, ny, nz),
+                 sample_field(v, v_base, v_fraction, ny, nz) - sample_field(old_v, v_base, v_fraction, ny, nz),
+                 sample_field(w, w_base, w_fraction, ny, nz) - sample_field(old_w, w_base, w_fraction, ny, nz));
     vstore3(vload3(0, particle_velocity + offset) + velocity_change, 0, particle_velocity + offset);
 }
 

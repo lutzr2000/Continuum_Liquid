@@ -37,12 +37,33 @@ grid_domain_bc(__global float *u, __global float *v, __global float *w, const in
         return;
 
     const int3 cell = grid_coordinates(index, ny, nz);
-    if (is_interior_cell(cell.x, cell.y, cell.z, nx, ny, nz))
+    const int ghost = !is_interior_cell(cell.x, cell.y, cell.z, nx, ny, nz);
+
+    // u[i] is the x-face on the positive side of pressure cell i (and likewise
+    // for v and w).  Consequently the upper solid face is nx-2, not nx-1.
+    // The old boundary condition only cleared the padding cell and left this
+    // actual wall face open.
+    const int wall_u = cell.x == 0 || cell.x >= nx - 2;
+    const int wall_v = cell.y == 0 || cell.y >= ny - 2;
+    const int wall_w = cell.z == 0 || cell.z >= nz - 2;
+    if (!ghost && !wall_u && !wall_v && !wall_w)
         return;
 
-    u[index] = 0.0f;
-    v[index] = 0.0f;
-    w[index] = 0.0f;
+    if (ghost) {
+        const int3 interior = clamp(cell, (int3)(1), (int3)(nx - 2, ny - 2, nz - 2));
+        const int interior_index = grid_index(interior.x, interior.y, interior.z, ny, nz);
+        u[index] = wall_u ? 0.0f : u[interior_index];
+        v[index] = wall_v ? 0.0f : v[interior_index];
+        w[index] = wall_w ? 0.0f : w[interior_index];
+        return;
+    }
+
+    if (wall_u)
+        u[index] = 0.0f;
+    if (wall_v)
+        v[index] = 0.0f;
+    if (wall_w)
+        w[index] = 0.0f;
 }
 
 __kernel void particle_domain_bc(__global float *particles,
