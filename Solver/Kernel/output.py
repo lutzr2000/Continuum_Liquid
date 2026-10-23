@@ -1,34 +1,41 @@
+import json
+from pathlib import Path
+
 import numpy as np
-from pxr import Usd, UsdGeom, Vt
-
-from . import kernel_config
-
-FIELD_DTYPE = kernel_config.FIELD_DTYPE
 
 
-def create_usd(filepath, fps, start_frame, end_frame):
-    stage = Usd.Stage.CreateNew(str(filepath))
-
-    stage.SetStartTimeCode(start_frame)
-    stage.SetEndTimeCode(end_frame)
-    stage.SetTimeCodesPerSecond(fps)
-    stage.SetFramesPerSecond(fps)
-    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
-    UsdGeom.SetStageMetersPerUnit(stage, 1.0)
-
-    points = UsdGeom.Points.Define(stage, "/WaterParticles")
-    stage.SetDefaultPrim(points.GetPrim())
-
-    return stage, points
+CACHE_FILENAME = "particle_cache.json"
+FRAME_DIRECTORY = "particles"
+FRAME_PATTERN = "particles_{frame:06d}.bin"
 
 
-def write_particles(points, particles, frame):
-    positions = np.ascontiguousarray(particles, dtype=FIELD_DTYPE)
+def create_cache(directory, fps, start_frame, end_frame, particle_count):
+    directory = Path(directory)
+    (directory / FRAME_DIRECTORY).mkdir(parents=True, exist_ok=True)
+    metadata = {
+        "version": 1,
+        "fps": int(fps),
+        "start_frame": int(start_frame),
+        "end_frame": int(end_frame),
+        "particle_count": int(particle_count),
+        "dtype": "float32",
+        "components": 3,
+        "frame_directory": FRAME_DIRECTORY,
+        "frame_pattern": FRAME_PATTERN,
+    }
+    (directory / CACHE_FILENAME).write_text(
+        json.dumps(metadata, indent=2), encoding="utf-8"
+    )
+    return directory
 
-    usd_positions = Vt.Vec3fArray.FromNumpy(positions)
 
-    points.GetPointsAttr().Set(usd_positions, Usd.TimeCode(frame))
-
-
-def save_usd(stage):
-    stage.GetRootLayer().Save()
+def write_particles(cache_directory, particles, frame):
+    positions = np.ascontiguousarray(particles, dtype=np.float32)
+    if positions.ndim != 2 or positions.shape[1] != 3:
+        raise ValueError("Particle positions must have shape (N, 3)")
+    filepath = (
+        Path(cache_directory)
+        / FRAME_DIRECTORY
+        / FRAME_PATTERN.format(frame=int(frame))
+    )
+    positions.tofile(filepath)

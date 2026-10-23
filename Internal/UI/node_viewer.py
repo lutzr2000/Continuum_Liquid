@@ -1,5 +1,14 @@
+from bpy.props import FloatProperty, FloatVectorProperty
+
 from . import node_base, sockets
-from ..Core import viewer
+from ..Core import load_result, viewer
+
+
+def update_particle_display(self, _context):
+    manager = load_result.PARTICLE_CACHE
+    manager.point_size = float(self.particle_point_size)
+    manager.color = tuple(self.particle_color)
+    manager.redraw()
 
 
 class ContinuumLiquidViewerNode(node_base.ContinuumLiquidBaseNode):
@@ -11,6 +20,26 @@ class ContinuumLiquidViewerNode(node_base.ContinuumLiquidBaseNode):
     bl_width_default = 260.0
     bl_width_min = 240.0
     bl_width_max = 520.0
+
+    particle_point_size: FloatProperty(
+        name="Point Size",
+        default=4.0,
+        min=1.0,
+        max=20.0,
+        update=update_particle_display,
+        options=set(),
+    )  # type: ignore
+
+    particle_color: FloatVectorProperty(
+        name="Fluid Color",
+        subtype="COLOR",
+        size=4,
+        default=(0.04, 0.32, 1.0, 1.0),
+        min=0.0,
+        max=1.0,
+        update=update_particle_display,
+        options=set(),
+    )  # type: ignore
 
     def _sync_node(self):
         self._ensure_socket(
@@ -30,4 +59,13 @@ class ContinuumLiquidViewerNode(node_base.ContinuumLiquidBaseNode):
             "continuum_liquid.viewer_toggle_domain",
             text="Hide Domain" if is_domain_preview_active else "Show Domain",
             icon="HIDE_ON" if is_domain_preview_active else "HIDE_OFF",
+        )
+        particles_visible = load_result.PARTICLE_CACHE.draw_handler is not None
+        column.separator()
+        column.prop(self, "particle_point_size")
+        column.prop(self, "particle_color")
+        column.operator(
+            "continuum_liquid.viewer_toggle_particles",
+            text="Hide Particles" if particles_visible else "Show Particles",
+            icon="HIDE_ON" if particles_visible else "HIDE_OFF",
         )

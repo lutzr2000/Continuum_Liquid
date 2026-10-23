@@ -1,7 +1,7 @@
 import bpy
 from nodeitems_utils import register_node_categories, unregister_node_categories
 
-from .Core import baking, viewer
+from .Core import baking, load_result, viewer
 from .UI.node_output import ContinuumLiquidOutputNode
 from .UI.node_domain import ContinuumLiquidDomainNode
 from .UI.node_physics import ContinuumLiquidPhysicsNode
@@ -70,6 +70,8 @@ def register():
         pass
 
     register_node_categories(NODE_CATEGORIES_ID, build_node_categories())
+    if load_result.particle_cache_frame_change not in bpy.app.handlers.frame_change_post:
+        bpy.app.handlers.frame_change_post.append(load_result.particle_cache_frame_change)
     if (
         reset_node_body_colors() is not None
         and not bpy.app.timers.is_registered(reset_node_body_colors)
@@ -79,6 +81,9 @@ def register():
 
 def unregister():
     viewer.disable_domain_preview()
+    load_result.PARTICLE_CACHE.disable()
+    if load_result.particle_cache_frame_change in bpy.app.handlers.frame_change_post:
+        bpy.app.handlers.frame_change_post.remove(load_result.particle_cache_frame_change)
 
     if bpy.app.timers.is_registered(reset_node_body_colors):
         bpy.app.timers.unregister(reset_node_body_colors)

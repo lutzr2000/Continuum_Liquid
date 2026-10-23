@@ -9,20 +9,14 @@ inline float3 interpolation_fraction(const float3 position, const float inv_dx, 
     return clamp(position * inv_dx - 0.5f - convert_float3(base), 0.0f, 1.0f);
 }
 
-inline int3 staggered_interpolation_base(const float3 position,
-                                         const float inv_dx,
-                                         const float3 offset,
-                                         const int nx,
-                                         const int ny,
-                                         const int nz) {
+inline int3 staggered_interpolation_base(
+    const float3 position, const float inv_dx, const float3 offset, const int nx, const int ny, const int nz) {
     const int3 base = convert_int3_rtn(position * inv_dx - offset);
     return clamp(base, (int3)(0), (int3)(nx - 2, ny - 2, nz - 2));
 }
 
-inline float3 staggered_interpolation_fraction(const float3 position,
-                                               const float inv_dx,
-                                               const float3 offset,
-                                               const int3 base) {
+inline float3
+staggered_interpolation_fraction(const float3 position, const float inv_dx, const float3 offset, const int3 base) {
     return clamp(position * inv_dx - offset - convert_float3(base), 0.0f, 1.0f);
 }
 
@@ -195,10 +189,8 @@ __kernel void particle_to_grid_gather(__global const float *particles,
                     const float3 wu_axis = max((float3)(0.0f), 1.0f - fabs(p - u_position));
                     const float3 wv_axis = max((float3)(0.0f), 1.0f - fabs(p - v_position));
                     const float3 ww_axis = max((float3)(0.0f), 1.0f - fabs(p - w_position));
-                    const float3 weight =
-                        (float3)(wu_axis.x * wu_axis.y * wu_axis.z,
-                                 wv_axis.x * wv_axis.y * wv_axis.z,
-                                 ww_axis.x * ww_axis.y * ww_axis.z);
+                    const float3 weight = (float3)(wu_axis.x * wu_axis.y * wu_axis.z, wv_axis.x * wv_axis.y * wv_axis.z,
+                                                   ww_axis.x * ww_axis.y * ww_axis.z);
                     velocity_sum += weight * vload3(0, particle_velocity + particle_offset);
                     weight_sum += weight;
                 }
@@ -206,10 +198,9 @@ __kernel void particle_to_grid_gather(__global const float *particles,
         }
     }
 
-    const float3 grid_velocity =
-        (float3)(weight_sum.x > 0.0f ? velocity_sum.x / weight_sum.x : 0.0f,
-                 weight_sum.y > 0.0f ? velocity_sum.y / weight_sum.y : 0.0f,
-                 weight_sum.z > 0.0f ? velocity_sum.z / weight_sum.z : 0.0f);
+    const float3 grid_velocity = (float3)(weight_sum.x > 0.0f ? velocity_sum.x / weight_sum.x : 0.0f,
+                                          weight_sum.y > 0.0f ? velocity_sum.y / weight_sum.y : 0.0f,
+                                          weight_sum.z > 0.0f ? velocity_sum.z / weight_sum.z : 0.0f);
     u[index] = grid_velocity.x;
     v[index] = grid_velocity.y;
     w[index] = grid_velocity.z;

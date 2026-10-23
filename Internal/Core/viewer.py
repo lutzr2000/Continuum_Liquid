@@ -3,6 +3,7 @@ import gpu
 from gpu_extras.batch import batch_for_shader
 
 from .domain_grid import dimensions
+from . import load_result
 
 
 draw_handler = None
@@ -33,6 +34,47 @@ class ContinuumLiquid_OT_viewer_toggle_domain(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class ContinuumLiquid_OT_viewer_toggle_particles(bpy.types.Operator):
+    """Toggle the baked particle cache in the 3D viewport."""
+
+    bl_idname = "continuum_liquid.viewer_toggle_particles"
+    bl_label = "Toggle Particles"
+    bl_description = "Show or hide the baked liquid particles"
+
+    def execute(self, context):
+        node = getattr(context, "node", None)
+        manager = load_result.PARTICLE_CACHE
+        if manager.draw_handler is not None:
+            manager.disable()
+            return {"FINISHED"}
+
+        simulation_node = get_linked_simulation_node(node)
+        if simulation_node is None:
+            self.report({"ERROR"}, "Connect Simulation -> Viewer first")
+            return {"CANCELLED"}
+        output_node = get_linked_output_node(simulation_node)
+        if output_node is None:
+            self.report({"ERROR"}, "No Output node is connected to this simulation")
+            return {"CANCELLED"}
+
+        from . import baking
+
+        directory = baking.get_bake_directory(output_node)
+        if directory is None:
+            self.report({"ERROR"}, "No particle bake found")
+            return {"CANCELLED"}
+        manager.point_size = float(getattr(node, "particle_point_size", 4.0))
+        manager.color = tuple(
+            getattr(node, "particle_color", (0.04, 0.32, 1.0, 1.0))
+        )
+        try:
+            manager.load_bake(directory, simulation_node=simulation_node)
+        except Exception as exc:
+            self.report({"ERROR"}, f"Could not load particles: {exc}")
+            return {"CANCELLED"}
+        return {"FINISHED"}
+
+
 def get_linked_domain_node(node):
     """Resolve Domain -> Simulation by traversing the viewer's Result input."""
     if node is None:
@@ -52,6 +94,36 @@ def get_linked_domain_node(node):
             domain_node = getattr(domain_link, "from_node", None)
             if getattr(domain_node, "bl_idname", "") == "CONTINUUM_LIQUID_DOMAIN_NODE":
                 return domain_node
+    return None
+
+
+def get_linked_simulation_node(node):
+    if node is None:
+        return None
+    socket = node.inputs.get("Result")
+    if socket is not None:
+        for link in socket.links:
+            simulation = getattr(link, "from_node", None)
+            if (
+                getattr(simulation, "bl_idname", "")
+                == "CONTINUUM_LIQUID_SIMULATION_NODE"
+            ):
+                return simulation
+    return None
+
+
+def get_linked_output_node(simulation_node):
+    node_tree = getattr(simulation_node, "id_data", None)
+    if node_tree is None:
+        return None
+    for node in node_tree.nodes:
+        if getattr(node, "bl_idname", "") != "CONTINUUM_LIQUID_OUTPUT_NODE":
+            continue
+        socket = node.inputs.get("Result")
+        if socket is not None and any(
+            getattr(link, "from_node", None) == simulation_node for link in socket.links
+        ):
+            return node
     return None
 
 
@@ -227,4 +299,7 @@ def viewer_domain_preview_enabled(viewer_node):
     return domain_preview_enabled(get_linked_domain_node(viewer_node))
 
 
-classes = (ContinuumLiquid_OT_viewer_toggle_domain,)
+classes = (
+    ContinuumLiquid_OT_viewer_toggle_domain,
+    ContinuumLiquid_OT_viewer_toggle_particles,
+)

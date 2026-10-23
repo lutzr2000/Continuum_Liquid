@@ -10,7 +10,7 @@ from . import load_result
 from .export import export_config
 
 
-USD_RESULTS = load_result.USDResultManager()
+PARTICLE_RESULTS = load_result.PARTICLE_CACHE
 bake_running = False
 progress = 0.0
 progress_text = "0%"
@@ -103,7 +103,7 @@ def clear_status_progress(context):
 class CONTINUUM_LIQUID_OT_bake(bpy.types.Operator):
     bl_idname = "continuum_liquid.bake"
     bl_label = "Bake"
-    bl_description = "Run the solver and write a new baked USD result"
+    bl_description = "Run the solver and write a new particle cache"
 
     def execute(self, context):
         global bake_running
@@ -228,12 +228,13 @@ class CONTINUUM_LIQUID_OT_bake(bpy.types.Operator):
             self.report({"ERROR"}, result.get("message", "Bake failed"))
             return {"CANCELLED"}
 
-        usd_path = Path(self.bake_directory) / "water_particles.usdc"
         try:
-            USD_RESULTS.load_bake(usd_path, simulation_node=self.simulation_node)
+            PARTICLE_RESULTS.load_bake(
+                self.bake_directory, simulation_node=self.simulation_node
+            )
             self.output_node.last_bake_directory = str(self.bake_directory)
         except Exception as exc:
-            self.report({"ERROR"}, f"Bake finished, but loading USD failed: {exc}")
+            self.report({"ERROR"}, f"Bake finished, but loading particles failed: {exc}")
             return {"CANCELLED"}
 
         if self.cancel_requested:
@@ -253,12 +254,12 @@ def normalize_directory_path(path_value):
         return None
 
 
-def directory_has_usd(directory):
+def directory_has_cache(directory):
     directory = normalize_directory_path(directory)
     return bool(
         directory
         and directory.is_dir()
-        and (directory / "water_particles.usdc").is_file()
+        and (directory / "particle_cache.json").is_file()
     )
 
 
@@ -266,15 +267,15 @@ def get_latest_bake_directory(output_node):
     root = normalize_directory_path(bpy.path.abspath(output_node.output_path))
     if root is None or not root.is_dir():
         return None
-    candidates = [child for child in root.iterdir() if directory_has_usd(child)]
-    if directory_has_usd(root):
+    candidates = [child for child in root.iterdir() if directory_has_cache(child)]
+    if directory_has_cache(root):
         candidates.append(root)
     return max(candidates, key=lambda path: path.stat().st_mtime) if candidates else None
 
 
 def get_bake_directory(output_node):
     stored = normalize_directory_path(getattr(output_node, "last_bake_directory", ""))
-    if directory_has_usd(stored):
+    if directory_has_cache(stored):
         return stored
     return get_latest_bake_directory(output_node)
 
@@ -286,20 +287,21 @@ def output_node_has_baked_data(output_node):
 class CONTINUUM_LIQUID_OT_free_bake(bpy.types.Operator):
     bl_idname = "continuum_liquid.free_bake"
     bl_label = "Free Bake"
-    bl_description = "Remove the loaded result and delete its baked USD data"
+    bl_description = "Remove the loaded result and delete its particle cache"
 
     def execute(self, context):
         output_node = get_output_node(context)
         bake_directory = get_bake_directory(output_node)
         if bake_directory is None:
-            self.report({"INFO"}, "No USD bake found to remove")
+            self.report({"INFO"}, "No particle bake found to remove")
             return {"FINISHED"}
 
-        USD_RESULTS.clear_bake(bake_directory)
+        PARTICLE_RESULTS.clear_bake(bake_directory)
         try:
             root = normalize_directory_path(bpy.path.abspath(output_node.output_path))
             if bake_directory == root:
-                (bake_directory / "water_particles.usdc").unlink(missing_ok=True)
+                shutil.rmtree(bake_directory / "particles", ignore_errors=True)
+                (bake_directory / "particle_cache.json").unlink(missing_ok=True)
             else:
                 shutil.rmtree(bake_directory)
         except OSError as exc:

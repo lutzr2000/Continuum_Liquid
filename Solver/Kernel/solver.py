@@ -138,6 +138,7 @@ def solver(config: dict, timings=None):
     )
     particle_velocity_host = np.zeros_like(particles_host)
     number_of_particles = len(particles_host)
+    print(f"Total particle count: {number_of_particles}")
 
     # ------------device arrays------------------
     # partciles
@@ -188,14 +189,14 @@ def solver(config: dict, timings=None):
 
     # ------------output------------------
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / "water_particles.usdc"
-    stage, usd_points = output.create_usd(
-        filepath=output_file,
+    particle_cache = output.create_cache(
+        directory=output_dir,
         fps=fps,
         start_frame=start_frame,
         end_frame=end_frame,
+        particle_count=number_of_particles,
     )
-    output.write_particles(usd_points, particles_host, frame=start_frame)
+    output.write_particles(particle_cache, particles_host, frame=start_frame)
     emit_message({"type": "stats", "frame": 0, "total_frames": total_frames})
 
     # ------------time loop------------------
@@ -372,7 +373,7 @@ def solver(config: dict, timings=None):
 
             with timings.section("output", "write_particles"):
                 output.write_particles(
-                    usd_points,
+                    particle_cache,
                     particles_host,
                     frame=start_frame + output_frame,
                 )
@@ -383,5 +384,3 @@ def solver(config: dict, timings=None):
                     "total_frames": total_frames,
                 }
             )
-
-    output.save_usd(stage)
