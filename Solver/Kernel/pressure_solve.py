@@ -20,7 +20,8 @@ def pressure_solve(
     p_levels,
     b_levels,
     mask_levels,
-    delta_levels,
+    operator_level0,
+    operator_levels,
     multigrid_level_shapes,
     dx,
     dt,
@@ -48,6 +49,16 @@ def pressure_solve(
         np.int32(ny),
         np.int32(nz),
     )
+    multigrid_kernels["build_finest_operator"](
+        queue,
+        (grid_cell_count,),
+        None,
+        fluid_fraction,
+        *operator_level0,
+        np.int32(nx),
+        np.int32(ny),
+        np.int32(nz),
+    )
 
     for _ in range(num_vcycles):
         multigrid.v_cycle(
@@ -57,11 +68,12 @@ def pressure_solve(
             p_levels,
             b_levels,
             mask_levels,
+            operator_levels,
             pressure,
             rhs,
             fluid_fraction,
+            operator_level0,
             dx,
-            delta_levels,
             multigrid_level_shapes,
             grid_shape,
             pre_smooth=2,

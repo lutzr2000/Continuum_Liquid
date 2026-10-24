@@ -9,22 +9,27 @@ from . import kernel_config
 FIELD_DTYPE = kernel_config.FIELD_DTYPE
 
 
+def coarse_grid_size(fine_size: int) -> int:
+    """Coarsen cell centres while retaining one ghost cell on either side."""
+    interior_size = max(0, fine_size - 2)
+    return (interior_size + 1) // 2 + 2
+
+
 def create_multigrid_levels(
     context: cl.Context,
     shape: tuple[int, int, int],
-    delta: float,
     min_size: int = 8,
 ) -> Any:
     """Allocate the dense levels below the simulation grid."""
     p_levels = []
     b_levels = []
     mask_levels = []
-    delta_levels = []
+    operator_levels = []
     level_shapes = []
 
-    nx = (shape[0] + 1) // 2
-    ny = (shape[1] + 1) // 2
-    nz = (shape[2] + 1) // 2
+    nx = coarse_grid_size(shape[0])
+    ny = coarse_grid_size(shape[1])
+    nz = coarse_grid_size(shape[2])
     level = 1
 
     while nx >= min_size and ny >= min_size and nz >= min_size:
@@ -32,15 +37,15 @@ def create_multigrid_levels(
         p_levels.append(helper.device_array(context, level_shape))
         b_levels.append(helper.device_array(context, level_shape))
         mask_levels.append(helper.device_array(context, level_shape))
-        delta_levels.append(delta * (2**level))
+        operator_levels.append(tuple(helper.device_array(context, level_shape) for _ in range(4)))
         level_shapes.append(level_shape)
 
-        nx = (nx + 1) // 2
-        ny = (ny + 1) // 2
-        nz = (nz + 1) // 2
+        nx = coarse_grid_size(nx)
+        ny = coarse_grid_size(ny)
+        nz = coarse_grid_size(nz)
         level += 1
 
-    return p_levels, b_levels, mask_levels, delta_levels, level_shapes
+    return p_levels, b_levels, mask_levels, operator_levels, level_shapes
 
 
 def v_cycle(
@@ -50,11 +55,12 @@ def v_cycle(
     p_levels: list[Any],
     b_levels: list[Any],
     mask_levels: list[Any],
+    operator_levels: list[tuple[Any, Any, Any, Any]],
     p_level0: Any,
     b_level0: Any,
     mask_level0: Any,
+    operator_level0: tuple[Any, Any, Any, Any],
     base_delta: float,
-    delta_levels: list[float],
     level_shapes: list[tuple[int, int, int]],
     level0_shape: tuple[int, int, int],
     pre_smooth: int,
@@ -64,12 +70,12 @@ def v_cycle(
     """Run one dense multigrid V-cycle for ``laplace(p) = b``."""
     if level == 0:
         p, b, mask = p_level0, b_level0, mask_level0
-        delta = base_delta
+        operator = operator_level0
         shape = level0_shape
     else:
         current = level - 1
         p, b, mask = p_levels[current], b_levels[current], mask_levels[current]
-        delta = delta_levels[current]
+        operator = operator_levels[current]
         shape = level_shapes[current]
 
     if level == len(p_levels):
@@ -79,18 +85,20 @@ def v_cycle(
             p,
             b,
             mask,
-            delta,
+            operator,
+            base_delta,
             pre_smooth + coarse_smooth_iterations,
             shape,
         )
         return
 
-    smooth(kernels, queue, p, b, mask, delta, pre_smooth, shape)
+    smooth(kernels, queue, p, b, mask, operator, base_delta, pre_smooth, shape)
 
     coarse = level
     coarse_p = p_levels[coarse]
     coarse_b = b_levels[coarse]
     coarse_mask = mask_levels[coarse]
+    coarse_operator = operator_levels[coarse]
     coarse_shape = level_shapes[coarse]
 
     kernels["restrict_residual"](
@@ -100,10 +108,12 @@ def v_cycle(
         p,
         b,
         mask,
+        *operator,
         coarse_p,
         coarse_b,
         coarse_mask,
-        FIELD_DTYPE(delta),
+        *coarse_operator,
+        FIELD_DTYPE(base_delta),
         np.int32(shape[0]),
         np.int32(shape[1]),
         np.int32(shape[2]),
@@ -119,11 +129,12 @@ def v_cycle(
         p_levels,
         b_levels,
         mask_levels,
+        operator_levels,
         p_level0,
         b_level0,
         mask_level0,
+        operator_level0,
         base_delta,
-        delta_levels,
         level_shapes,
         level0_shape,
         pre_smooth,
@@ -146,7 +157,7 @@ def v_cycle(
         np.int32(shape[2]),
     )
 
-    smooth(kernels, queue, p, b, mask, delta, post_smooth, shape)
+    smooth(kernels, queue, p, b, mask, operator, base_delta, post_smooth, shape)
 
 
 def smooth(
@@ -155,26 +166,31 @@ def smooth(
     p: Any,
     b: Any,
     mask: Any,
+    operator: tuple[Any, Any, Any, Any],
     delta: float,
     iterations: int,
     shape: tuple[int, int, int],
 ) -> None:
     """Apply red-black Gauss-Seidel smoothing to one dense level."""
     cell_count = int(np.prod(shape))
-    args = (
-        p,
-        b,
-        mask,
-        FIELD_DTYPE(delta),
-        np.int32(shape[0]),
-        np.int32(shape[1]),
-        np.int32(shape[2]),
-    )
     kernel = kernels["rbgs_step"]
 
     for _ in range(iterations):
-        kernel(queue, (cell_count,), None, *args[:4], np.int32(0), *args[4:])
-        kernel(queue, (cell_count,), None, *args[:4], np.int32(1), *args[4:])
+        for parity in (0, 1):
+            kernel(
+                queue,
+                (cell_count,),
+                None,
+                p,
+                b,
+                mask,
+                *operator,
+                FIELD_DTYPE(delta),
+                np.int32(parity),
+                np.int32(shape[0]),
+                np.int32(shape[1]),
+                np.int32(shape[2]),
+            )
 
 
 def coarse_smooth(
@@ -183,6 +199,7 @@ def coarse_smooth(
     p: Any,
     b: Any,
     mask: Any,
+    operator: tuple[Any, Any, Any, Any],
     delta: float,
     iterations: int,
     shape: tuple[int, int, int],
@@ -196,6 +213,7 @@ def coarse_smooth(
         p,
         b,
         mask,
+        *operator,
         FIELD_DTYPE(delta),
         np.int32(iterations),
         np.int32(shape[0]),

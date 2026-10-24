@@ -169,18 +169,18 @@ def solver(config: dict, timings=None):
     # pressure
     pressure = helper.device_array(context, grid_shape)
     pressure_rhs = helper.device_array(context, grid_shape)
+    pressure_operator = tuple(helper.device_array(context, grid_shape) for _ in range(4))
 
     # ------------multigrid------------------
     (
         multigrid_pressure_levels,
         multigrid_rhs_levels,
         multigrid_mask_levels,
-        multigrid_delta_levels,
+        multigrid_operator_levels,
         multigrid_level_shapes,
     ) = multigrid.create_multigrid_levels(
         context,
         grid_shape,
-        delta,
         min_size=8,
     )
 
@@ -296,7 +296,8 @@ def solver(config: dict, timings=None):
                 multigrid_pressure_levels,
                 multigrid_rhs_levels,
                 multigrid_mask_levels,
-                multigrid_delta_levels,
+                pressure_operator,
+                multigrid_operator_levels,
                 multigrid_level_shapes,
                 delta,
                 dt,

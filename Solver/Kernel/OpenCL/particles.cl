@@ -158,10 +158,6 @@ __kernel void particle_to_grid_gather(__global const float *particles,
     float3 velocity_sum = (float3)(0.0f);
     float3 weight_sum = (float3)(0.0f);
 
-    // The pressure operators use a MAC layout.  u, v and w therefore live at
-    // (i+1,j+.5,k+.5), (i+.5,j+1,k+.5), and (i+.5,j+.5,k+1).
-    // Particle bins are cell-centred, so inspect the adjacent 3^3 bins and
-    // evaluate each component's staggered trilinear weight explicitly.
     const float3 grid_position = convert_float3(cell);
     const float3 u_position = grid_position + (float3)(1.0f, 0.5f, 0.5f);
     const float3 v_position = grid_position + (float3)(0.5f, 1.0f, 0.5f);
@@ -204,6 +200,7 @@ __kernel void particle_to_grid_gather(__global const float *particles,
     u[index] = grid_velocity.x;
     v[index] = grid_velocity.y;
     w[index] = grid_velocity.z;
+
     fluid_fraction[index] = convert_float(particle_count[index]) * inv_particles_per_cell;
 }
 
