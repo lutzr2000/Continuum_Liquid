@@ -4,8 +4,11 @@ from nodeitems_utils import register_node_categories, unregister_node_categories
 from .Core import baking, load_result, viewer
 from .UI.node_output import ContinuumLiquidOutputNode
 from .UI.node_domain import ContinuumLiquidDomainNode
+from .UI.node_geometry import ContinuumLiquidGeometryNode
+from .UI.node_obstacle import ContinuumLiquidObstacleNode
 from .UI.node_physics import ContinuumLiquidPhysicsNode
 from .UI.node_simulation import ContinuumLiquidSimulationNode
+from .UI.node_source import ContinuumLiquidSourceNode
 from .UI.node_viewer import ContinuumLiquidViewerNode
 from .UI.node_tree import (
     ContinuumLiquidNodeTree,
@@ -14,6 +17,7 @@ from .UI.node_tree import (
 )
 from .UI.sockets import (
     ContinuumLiquidForceSocket,
+    ContinuumLiquidGeometrySocket,
     ContinuumLiquidLinkSocket,
     ContinuumLiquidReferenceFrameSocket,
     ContinuumLiquidResultSocket,
@@ -25,9 +29,13 @@ classes = (
     ContinuumLiquidForceSocket,
     ContinuumLiquidReferenceFrameSocket,
     ContinuumLiquidResultSocket,
+    ContinuumLiquidGeometrySocket,
     ContinuumLiquidDomainNode,
+    ContinuumLiquidGeometryNode,
     ContinuumLiquidPhysicsNode,
     ContinuumLiquidSimulationNode,
+    ContinuumLiquidSourceNode,
+    ContinuumLiquidObstacleNode,
     ContinuumLiquidViewerNode,
     ContinuumLiquidOutputNode,
     *viewer.classes,

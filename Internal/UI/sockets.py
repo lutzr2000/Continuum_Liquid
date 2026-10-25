@@ -35,3 +35,9 @@ class ContinuumLiquidResultSocket(_ContinuumLiquidSocket, bpy.types.NodeSocket):
     bl_idname = "CONTINUUM_LIQUID_RESULT_SOCKET"
     bl_label = "Continuum Liquid Result"
     socket_color = (0.65, 0.35, 0.85, 1.0)
+
+
+class ContinuumLiquidGeometrySocket(_ContinuumLiquidSocket, bpy.types.NodeSocket):
+    bl_idname = "CONTINUUM_LIQUID_GEOMETRY_SOCKET"
+    bl_label = "Continuum Liquid Geometry"
+    socket_color = (0.0, 214.0 / 255.0, 163.0 / 255.0, 1.0)

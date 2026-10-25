@@ -29,9 +29,12 @@ def build_node_categories():
             "Continuum Liquid",
             items=[
                 NodeItem("CONTINUUM_LIQUID_DOMAIN_NODE"),
+                NodeItem("CONTINUUM_LIQUID_GEOMETRY_NODE"),
                 NodeItem("CONTINUUM_LIQUID_OUTPUT_NODE"),
                 NodeItem("CONTINUUM_LIQUID_PHYSICS_NODE"),
                 NodeItem("CONTINUUM_LIQUID_SIMULATION_NODE"),
+                NodeItem("CONTINUUM_LIQUID_SOURCE_NODE"),
+                NodeItem("CONTINUUM_LIQUID_OBSTACLE_NODE"),
                 NodeItem("CONTINUUM_LIQUID_VIEWER_NODE"),
             ],
         )

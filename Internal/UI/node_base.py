@@ -40,3 +40,11 @@ class ContinuumLiquidBaseNode(bpy.types.Node):
 
     def _ensure_named_output(self, socket_type, name):
         return self._ensure_socket(self.outputs, socket_type, name)
+
+    def _ensure_geometry_input(self):
+        return self._ensure_socket(
+            self.inputs,
+            "CONTINUUM_LIQUID_GEOMETRY_SOCKET",
+            "Geometry",
+            multi_input=True,
+        )
