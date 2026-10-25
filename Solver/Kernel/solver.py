@@ -14,6 +14,7 @@ from . import pressure_solve
 from . import source_particles
 from . import timing
 from . import velocity_update
+from . import voxelise_mesh
 
 FIELD_DTYPE = kernel_config.FIELD_DTYPE
 
@@ -62,12 +63,18 @@ def solver(config: dict, timings=None):
         kernel_path / "boundary_conditions.cl",
     )
 
+    voxelise_mesh_kernels = helper.load_program(
+        context,
+        kernel_path / "voxelise_mesh.cl",
+    )
+
     kernel_sets = (
         particles_kernels,
         velocity_update_kernels,
         pressure_solve_kernels,
         multigrid_kernels,
         boundary_conditions_kernels,
+        voxelise_mesh_kernels,
     )
     kernel_config.constrain_to_compiled_kernels(
         (kernel for kernel_set in kernel_sets for kernel in kernel_set.values()),
@@ -122,8 +129,19 @@ def solver(config: dict, timings=None):
     fz = 0.0
 
     # ------------particles and static voxel masks------------------
-    sources, obstacle_mask_host = source_particles.load_static_masks(
-        simulation, grid_shape
+    source_masks_device, obstacle_mask = voxelise_mesh.build_static_masks(
+        context,
+        queue,
+        voxelise_mesh_kernels["voxelise_mesh"],
+        simulation,
+        grid_shape,
+        delta,
+    )
+    sources, obstacle_mask_host = source_particles.download_static_masks(
+        queue,
+        source_masks_device,
+        obstacle_mask,
+        grid_shape,
     )
     rng = np.random.default_rng(0)
     particles_per_cell = 8
@@ -166,10 +184,6 @@ def solver(config: dict, timings=None):
         particle_capacity,
     )
     particle_count = helper.device_array(context, grid_shape, dtype=np.int32)
-    obstacle_mask = helper.to_device(
-        context, np.ascontiguousarray(obstacle_mask_host, dtype=np.uint8)
-    )
-
     # velocity
     u = helper.device_array(context, grid_shape)
     v = helper.device_array(context, grid_shape)

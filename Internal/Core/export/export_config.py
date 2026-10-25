@@ -3,7 +3,7 @@ from pathlib import Path
 
 import bpy
 
-from . import export_voxels
+from . import export_geometry
 
 
 def linked_node(node, socket_name, direction="input"):
@@ -80,6 +80,44 @@ def build_config_dict(output_node):
         if getattr(node, "bl_idname", "") == "CONTINUUM_LIQUID_VIEWER_NODE"
     ]
 
+    start_frame = int(simulation_node.start_frame)
+    scene = bpy.context.scene
+    original_frame = int(scene.frame_current)
+    geometry_entries = {}
+    node_geometry = {}
+    try:
+        scene.frame_set(start_frame)
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        for node in source_nodes + obstacle_nodes:
+            entries = []
+            for geometry_node in linked_nodes(node, "Geometry"):
+                if (
+                    getattr(geometry_node, "bl_idname", "")
+                    != "CONTINUUM_LIQUID_GEOMETRY_NODE"
+                ):
+                    continue
+                source_object = getattr(geometry_node, "source_object", None)
+                if (
+                    source_object is None
+                    or getattr(source_object, "type", None) != "MESH"
+                ):
+                    continue
+                matrix = source_object.evaluated_get(depsgraph).matrix_world
+                entries.append(
+                    {
+                        "object_name": source_object.name,
+                        "mesh_file": f"geometry/{source_object.name}.usdc",
+                        "mesh_format": "usdc",
+                        "matrix_world": [
+                            [float(value) for value in row] for row in matrix
+                        ],
+                    }
+                )
+                geometry_entries[source_object.name] = source_object
+            node_geometry[node.name] = entries
+    finally:
+        scene.frame_set(original_frame)
+
     return {
         "simulation": {
             "node_tree": output_node.id_data.name,
@@ -87,7 +125,7 @@ def build_config_dict(output_node):
             "settings": {
                 "solver_backend": str(simulation_node.solver_backend),
                 "compute_devices": simulation_node.selected_opencl_devices(),
-                "start_frame": int(simulation_node.start_frame),
+                "start_frame": start_frame,
                 "end_frame": int(simulation_node.end_frame),
                 "fps": int(output_node.fps),
                 "substeps": int(simulation_node.substeps),
@@ -119,15 +157,18 @@ def build_config_dict(output_node):
                     "type": str(node.source_type),
                     "particle_density": int(node.particle_density),
                     "velocity": [float(value) for value in node.velocity],
+                    "geometry_inputs": node_geometry.get(node.name, []),
                 }
                 for node in source_nodes
             ],
-            "obstacles": [{} for _node in obstacle_nodes],
+            "obstacles": [
+                {"geometry_inputs": node_geometry.get(node.name, [])}
+                for node in obstacle_nodes
+            ],
         },
-        "_voxel_export": {
-            "domain_node": domain_node,
-            "source_nodes": source_nodes,
-            "obstacle_nodes": obstacle_nodes,
+        "_geometry_export": {
+            "objects": geometry_entries,
+            "start_frame": start_frame,
         },
     }
 
@@ -139,12 +180,11 @@ def export_config_dict(config_dict):
     bake_directory = output_root / f"Bake_run_{timestamp}"
     bake_directory.mkdir(parents=False, exist_ok=False)
     config_dict["simulation"]["output_path"] = str(bake_directory.resolve())
-    export_context = config_dict.pop("_voxel_export", {})
-    export_voxels.export_static_masks(
-        config_dict,
-        bake_directory,
-        export_context.get("domain_node"),
-        export_context.get("source_nodes", ()),
-        export_context.get("obstacle_nodes", ()),
-    )
+    export_context = config_dict.pop("_geometry_export", {})
+    for source_object in export_context.get("objects", {}).values():
+        export_geometry.export_object_as_usdc(
+            source_object,
+            bake_directory / "geometry",
+            export_context.get("start_frame", 1),
+        )
     return bake_directory, config_dict

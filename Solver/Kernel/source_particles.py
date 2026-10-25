@@ -1,30 +1,21 @@
-from pathlib import Path
-
 import numpy as np
+import pyopencl as cl
 
 FIELD_DTYPE = np.float32
 
 
-def load_static_masks(simulation, grid_shape):
-    bake_path = Path(simulation["output_path"])
-    sources = []
-    for entry in simulation.get("sources") or []:
-        mask_path = bake_path / entry["mask_file"]
-        with np.load(mask_path) as archive:
-            mask = np.asarray(archive["mask"], dtype=np.bool_)
-        if mask.shape != tuple(grid_shape):
-            raise ValueError(f"Source mask has invalid shape: {mask_path}")
-        sources.append({**entry, "mask": mask})
-
-    obstacle_path = simulation.get("obstacle_mask_file")
-    if obstacle_path:
-        with np.load(bake_path / obstacle_path) as archive:
-            obstacle_mask = np.asarray(archive["mask"], dtype=np.bool_)
-    else:
-        obstacle_mask = np.zeros(grid_shape, dtype=np.bool_)
-    if obstacle_mask.shape != tuple(grid_shape):
-        raise ValueError("Obstacle mask has invalid shape")
-    return sources, obstacle_mask
+def download_static_masks(queue, sources, obstacle_mask_device, grid_shape):
+    """Download the one-time GPU masks needed by host-side particle sources."""
+    obstacle_mask = np.empty(grid_shape, dtype=np.uint8)
+    cl.enqueue_copy(queue, obstacle_mask, obstacle_mask_device).wait()
+    result = []
+    for source in sources:
+        mask = np.empty(grid_shape, dtype=np.uint8)
+        cl.enqueue_copy(queue, mask, source["mask_device"]).wait()
+        entry = {key: value for key, value in source.items() if key != "mask_device"}
+        entry["mask"] = mask.astype(np.bool_, copy=False)
+        result.append(entry)
+    return result, obstacle_mask.astype(np.bool_, copy=False)
 
 
 def particle_cells(positions, delta, grid_shape):
