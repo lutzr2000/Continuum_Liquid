@@ -183,7 +183,9 @@ def solver(config: dict, timings=None):
     # pressure
     pressure = helper.device_array(context, grid_shape)
     pressure_rhs = helper.device_array(context, grid_shape)
-    pressure_operator = tuple(helper.device_array(context, grid_shape) for _ in range(4))
+    pressure_operator = tuple(
+        helper.device_array(context, grid_shape) for _ in range(4)
+    )
 
     # ------------multigrid------------------
     (

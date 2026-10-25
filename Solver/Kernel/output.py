@@ -3,7 +3,6 @@ from pathlib import Path
 
 import numpy as np
 
-
 CACHE_FILENAME = "particle_cache.json"
 FRAME_DIRECTORY = "particles"
 FRAME_PATTERN = "particles_{frame:06d}.bin"
@@ -34,8 +33,6 @@ def write_particles(cache_directory, particles, frame):
     if positions.ndim != 2 or positions.shape[1] != 3:
         raise ValueError("Particle positions must have shape (N, 3)")
     filepath = (
-        Path(cache_directory)
-        / FRAME_DIRECTORY
-        / FRAME_PATTERN.format(frame=int(frame))
+        Path(cache_directory) / FRAME_DIRECTORY / FRAME_PATTERN.format(frame=int(frame))
     )
     positions.tofile(filepath)
