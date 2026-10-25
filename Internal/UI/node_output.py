@@ -7,7 +7,6 @@ from bpy.props import IntProperty, StringProperty
 from . import node_base, sockets
 from ..Core import baking as bake_main
 
-
 INVALID_OUTPUT_PATH_MESSAGE = "Invalid output path"
 
 

@@ -313,11 +313,11 @@ def domain_preview_enabled(domain_node):
     """Return whether the preview is active for the given domain node."""
     if not current_drawn_domain or domain_node is None:
         return False
-    
+
     node_tree = bpy.data.node_groups.get(current_drawn_domain.get("node_tree_name", ""))
     if node_tree is None:
         return False
-    
+
     active_domain = node_tree.nodes.get(current_drawn_domain.get("node_name", ""))
     if active_domain is None:
         return False

@@ -1,7 +1,6 @@
 import bpy
 from nodeitems_utils import NodeCategory, NodeItem
 
-
 NODE_TREE_ID = "CONTINUUM_LIQUID_NODE_TREE"
 NODE_CATEGORIES_ID = "CONTINUUM_LIQUID_NODE_CATEGORIES"
 

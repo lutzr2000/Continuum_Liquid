@@ -38,7 +38,7 @@ class ContinuumLiquidPhysicsNode(node_base.ContinuumLiquidBaseNode):
         precision=6,
         options=set(),
     )  # type: ignore
-    
+
     air_viscosity: FloatProperty(
         name="Air Viscosity",
         default=1.5e-5,

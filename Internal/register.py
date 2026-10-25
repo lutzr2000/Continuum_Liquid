@@ -55,7 +55,6 @@ def safe_register_class(cls):
     bpy.utils.register_class(cls)
 
 
-
 def register():
     solver_status.refresh_opencl_devices()
     for cls in classes:
@@ -67,15 +66,22 @@ def register():
         pass
 
     register_node_categories(NODE_CATEGORIES_ID, build_node_categories())
-    if load_result.particle_cache_frame_change not in bpy.app.handlers.frame_change_post:
-        bpy.app.handlers.frame_change_post.append(load_result.particle_cache_frame_change)
+    if (
+        load_result.particle_cache_frame_change
+        not in bpy.app.handlers.frame_change_post
+    ):
+        bpy.app.handlers.frame_change_post.append(
+            load_result.particle_cache_frame_change
+        )
 
 
 def unregister():
     viewer.disable_domain_preview()
     load_result.PARTICLE_CACHE.disable()
     if load_result.particle_cache_frame_change in bpy.app.handlers.frame_change_post:
-        bpy.app.handlers.frame_change_post.remove(load_result.particle_cache_frame_change)
+        bpy.app.handlers.frame_change_post.remove(
+            load_result.particle_cache_frame_change
+        )
 
     try:
         unregister_node_categories(NODE_CATEGORIES_ID)

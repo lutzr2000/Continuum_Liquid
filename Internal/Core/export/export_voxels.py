@@ -37,12 +37,16 @@ def _object_bvh(source_object, depsgraph):
         vertices = [matrix @ vertex.co for vertex in mesh.vertices]
         flip_winding = matrix.to_3x3().determinant() < 0.0
         polygons = [
-            tuple(reversed(polygon.vertices))
-            if flip_winding
-            else tuple(polygon.vertices)
+            (
+                tuple(reversed(polygon.vertices))
+                if flip_winding
+                else tuple(polygon.vertices)
+            )
             for polygon in mesh.polygons
         ]
-        coordinates = np.asarray([tuple(vertex) for vertex in vertices], dtype=np.float64)
+        coordinates = np.asarray(
+            [tuple(vertex) for vertex in vertices], dtype=np.float64
+        )
         return (
             BVHTree.FromPolygons(vertices, polygons, all_triangles=False),
             coordinates.min(axis=0),
@@ -66,7 +70,9 @@ def _voxelize_objects(objects, domain_node):
         if bvh is None:
             continue
         lower = np.maximum(0, np.floor((bounds_min - domain_min) / delta).astype(int))
-        upper = np.minimum(shape, np.ceil((bounds_max - domain_min) / delta).astype(int))
+        upper = np.minimum(
+            shape, np.ceil((bounds_max - domain_min) / delta).astype(int)
+        )
         lower = np.maximum(lower, 1)
         upper = np.minimum(upper, np.asarray(shape) - 1)
         ray_direction = Vector((1.0, 0.3713907, 0.2178311)).normalized()
@@ -93,7 +99,9 @@ def _voxelize_objects(objects, domain_node):
     return mask
 
 
-def export_static_masks(config, bake_directory, domain_node, source_nodes, obstacle_nodes):
+def export_static_masks(
+    config, bake_directory, domain_node, source_nodes, obstacle_nodes
+):
     if domain_node is None:
         return
     simulation = config["simulation"]
@@ -104,7 +112,9 @@ def export_static_masks(config, bake_directory, domain_node, source_nodes, obsta
     masks_directory.mkdir(parents=True, exist_ok=True)
     try:
         scene.frame_set(start_frame)
-        for index, (source, entry) in enumerate(zip(source_nodes, simulation["sources"])):
+        for index, (source, entry) in enumerate(
+            zip(source_nodes, simulation["sources"])
+        ):
             mask = _voxelize_objects(_linked_geometry_objects(source), domain_node)
             relative_path = f"masks/source_{index:04d}.npz"
             np.savez_compressed(masks_directory / f"source_{index:04d}.npz", mask=mask)

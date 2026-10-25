@@ -220,13 +220,11 @@ class CONTINUUM_LIQUID_OT_bake(bpy.types.Operator):
             self.report({"ERROR"}, result.get("message", "Bake failed"))
             return {"CANCELLED"}
 
-
         PARTICLE_RESULTS.load_bake(
             self.bake_directory, simulation_node=self.simulation_node
         )
 
         self.output_node.last_bake_directory = str(self.bake_directory)
-
 
         if self.cancel_requested:
             self.report({"INFO"}, "Bake cancelled; partial result loaded")
@@ -258,12 +256,12 @@ def get_latest_bake_directory(output_node):
     root = normalize_directory_path(bpy.path.abspath(output_node.output_path))
     if root is None or not root.is_dir():
         return None
-    
+
     candidates = [child for child in root.iterdir() if directory_has_cache(child)]
 
     if directory_has_cache(root):
         candidates.append(root)
-        
+
     return (
         max(candidates, key=lambda path: path.stat().st_mtime) if candidates else None
     )
@@ -274,7 +272,7 @@ def get_bake_directory(output_node):
 
     if directory_has_cache(stored):
         return stored
-    
+
     return get_latest_bake_directory(output_node)
 
 

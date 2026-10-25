@@ -36,7 +36,11 @@ def particle_cells(positions, delta, grid_shape):
 
 def mask_membership(positions, mask, delta):
     cells = particle_cells(positions, delta, mask.shape)
-    return mask[cells[:, 0], cells[:, 1], cells[:, 2]] if len(cells) else np.zeros(0, dtype=np.bool_)
+    return (
+        mask[cells[:, 0], cells[:, 1], cells[:, 2]]
+        if len(cells)
+        else np.zeros(0, dtype=np.bool_)
+    )
 
 
 def remove_masked(particles, velocities, mask, delta):
@@ -68,15 +72,21 @@ def fill_source(particles, velocities, source, obstacle_mask, delta, rng):
         return particles, velocities
 
     spawned = (spawn_cells + rng.random((len(spawn_cells), 3))) * delta
-    source_velocity = np.asarray(source.get("velocity", (0.0, 0.0, 0.0)), dtype=FIELD_DTYPE)
+    source_velocity = np.asarray(
+        source.get("velocity", (0.0, 0.0, 0.0)), dtype=FIELD_DTYPE
+    )
     spawned_velocity = np.broadcast_to(source_velocity, spawned.shape).copy()
     return (
         np.ascontiguousarray(np.concatenate((particles, spawned)), dtype=FIELD_DTYPE),
-        np.ascontiguousarray(np.concatenate((velocities, spawned_velocity)), dtype=FIELD_DTYPE),
+        np.ascontiguousarray(
+            np.concatenate((velocities, spawned_velocity)), dtype=FIELD_DTYPE
+        ),
     )
 
 
-def apply_sources(particles, velocities, sources, obstacle_mask, delta, rng, initial=False):
+def apply_sources(
+    particles, velocities, sources, obstacle_mask, delta, rng, initial=False
+):
     for source in sources:
         if source.get("type") == "OUTFLOW":
             particles, velocities = remove_masked(

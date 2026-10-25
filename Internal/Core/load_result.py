@@ -81,7 +81,7 @@ class ParticleCacheManager:
         frame = min(end, max(start, int(frame)))
         if frame == self.loaded_frame:
             return
-        
+
         frame_directory = Path(self.loaded_directory) / self.metadata["frame_directory"]
         filename = self.metadata["frame_pattern"].format(frame=frame)
         filepath = frame_directory / filename
@@ -114,7 +114,7 @@ class ParticleCacheManager:
     def draw(self):
         if self.positions is None or not self._overlays_enabled():
             return
-        
+
         shader = gpu.shader.from_builtin("UNIFORM_COLOR")
         gpu.state.blend_set("ALPHA")
         gpu.state.depth_test_set("LESS_EQUAL")
@@ -125,7 +125,7 @@ class ParticleCacheManager:
         if self.batch is None or self.batch_frame != self.loaded_frame:
             self.batch = batch_for_shader(shader, "POINTS", {"pos": self.positions})
             self.batch_frame = self.loaded_frame
-            
+
         self.batch.draw(shader)
         gpu.state.point_size_set(1.0)
         gpu.state.depth_test_set("NONE")
@@ -144,7 +144,10 @@ class ParticleCacheManager:
             if socket is not None:
                 for link in socket.links:
                     domain = getattr(link, "from_node", None)
-                    if getattr(domain, "bl_idname", "") == "CONTINUUM_LIQUID_DOMAIN_NODE":
+                    if (
+                        getattr(domain, "bl_idname", "")
+                        == "CONTINUUM_LIQUID_DOMAIN_NODE"
+                    ):
                         width, depth, _height = dimensions(domain)
                         return (-width * 0.5, -depth * 0.5, 0.0)
         return (0.0, 0.0, 0.0)

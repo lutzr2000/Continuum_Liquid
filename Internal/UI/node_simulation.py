@@ -63,7 +63,7 @@ class ContinuumLiquidSimulationNode(node_base.ContinuumLiquidBaseNode):
 
     def has_selected_opencl_device(self):
         return bool(self.selected_opencl_devices())
-    
+
     start_frame: IntProperty(
         name="Start Frame",
         default=1,

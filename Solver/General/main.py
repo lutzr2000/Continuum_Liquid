@@ -4,7 +4,6 @@ import threading
 from time import perf_counter
 from typing import Any, Callable
 
-
 MessageCallback = Callable[[dict[str, Any]], None]
 
 _message_callback: MessageCallback | None = None

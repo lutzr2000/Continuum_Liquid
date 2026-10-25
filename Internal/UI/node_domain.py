@@ -17,16 +17,16 @@ class ContinuumLiquidDomainNode(node_base.ContinuumLiquidBaseNode):
         min=0.000001,
         soft_min=0.000001,
         unit="LENGTH",
-        options=set()
+        options=set(),
     )  # type: ignore
-    
+
     lx: FloatProperty(
         name="Lx",
         default=10.0,
         min=0.000001,
         soft_min=0.000001,
         unit="LENGTH",
-        options=set()
+        options=set(),
     )  # type: ignore
 
     ly: FloatProperty(

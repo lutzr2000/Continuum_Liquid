@@ -37,7 +37,9 @@ def create_multigrid_levels(
         p_levels.append(helper.device_array(context, level_shape))
         b_levels.append(helper.device_array(context, level_shape))
         mask_levels.append(helper.device_array(context, level_shape))
-        operator_levels.append(tuple(helper.device_array(context, level_shape) for _ in range(4)))
+        operator_levels.append(
+            tuple(helper.device_array(context, level_shape) for _ in range(4))
+        )
         level_shapes.append(level_shape)
 
         nx = coarse_grid_size(nx)

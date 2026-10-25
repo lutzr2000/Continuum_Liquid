@@ -46,9 +46,7 @@ def require_linked_node(node, socket_name, expected_type, direction="input"):
 
 
 def build_config_dict(output_node):
-    output_path = Path(
-        bpy.path.abspath(output_node.output_path)
-    ).expanduser().resolve()
+    output_path = Path(bpy.path.abspath(output_node.output_path)).expanduser().resolve()
 
     simulation_node = require_linked_node(
         output_node,
@@ -95,8 +93,7 @@ def build_config_dict(output_node):
                 "substeps": int(simulation_node.substeps),
                 "iterations": int(simulation_node.iterations),
                 "debug_timing": any(
-                    bool(getattr(node, "debug_timing", False))
-                    for node in viewer_nodes
+                    bool(getattr(node, "debug_timing", False)) for node in viewer_nodes
                 ),
             },
             "domain": {
