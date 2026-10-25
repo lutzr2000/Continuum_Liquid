@@ -48,5 +48,6 @@ class ContinuumLiquidSourceNode(node_base.ContinuumLiquidBaseNode):
     def draw_buttons(self, _context, layout):
         column = layout.column(align=True)
         column.prop(self, "source_type", text="")
-        column.prop(self, "particle_density")
-        column.prop(self, "velocity")
+        if self.source_type != "OUTFLOW":
+            column.prop(self, "particle_density")
+            column.prop(self, "velocity")

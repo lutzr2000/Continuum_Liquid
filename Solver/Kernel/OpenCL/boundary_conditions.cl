@@ -95,3 +95,25 @@ __kernel void particle_domain_bc(__global float *particles,
     vstore3(position, 0, particles + offset);
     vstore3(velocity, 0, particle_velocity + offset);
 }
+
+__kernel void grid_obstacle_bc(__global float *u,
+                               __global float *v,
+                               __global float *w,
+                               __global float *fluid_fraction,
+                               __global const uchar *obstacle,
+                               const int nx,
+                               const int ny,
+                               const int nz) {
+    const int index = get_global_id(0);
+    if (index >= nx * ny * nz)
+        return;
+    const int3 cell = grid_coordinates(index, ny, nz);
+    if (obstacle[index])
+        fluid_fraction[index] = 0.0f;
+    const int x_solid = obstacle[index] || (cell.x + 1 < nx && obstacle[grid_index(cell.x + 1, cell.y, cell.z, ny, nz)]);
+    const int y_solid = obstacle[index] || (cell.y + 1 < ny && obstacle[grid_index(cell.x, cell.y + 1, cell.z, ny, nz)]);
+    const int z_solid = obstacle[index] || (cell.z + 1 < nz && obstacle[grid_index(cell.x, cell.y, cell.z + 1, ny, nz)]);
+    if (x_solid) u[index] = 0.0f;
+    if (y_solid) v[index] = 0.0f;
+    if (z_solid) w[index] = 0.0f;
+}

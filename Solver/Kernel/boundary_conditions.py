@@ -50,6 +50,22 @@ def grid_domain_bc(kernels, queue, velocity, grid_shape):
     return velocity
 
 
+def grid_obstacle_bc(kernels, queue, velocity, fluid_fraction, obstacle, grid_shape):
+    nx, ny, nz = grid_shape
+    kernels["grid_obstacle_bc"](
+        queue,
+        (nx * ny * nz,),
+        None,
+        *velocity,
+        fluid_fraction,
+        obstacle,
+        np.int32(nx),
+        np.int32(ny),
+        np.int32(nz),
+    )
+    return velocity, fluid_fraction
+
+
 def particle_domain_bc(
     kernels,
     queue,

@@ -9,15 +9,15 @@ FRAME_DIRECTORY = "particles"
 FRAME_PATTERN = "particles_{frame:06d}.bin"
 
 
-def create_cache(directory, fps, start_frame, end_frame, particle_count):
+def create_cache(directory, fps, start_frame, end_frame, particle_count=None):
     directory = Path(directory)
     (directory / FRAME_DIRECTORY).mkdir(parents=True, exist_ok=True)
     metadata = {
-        "version": 1,
+        "version": 2,
         "fps": int(fps),
         "start_frame": int(start_frame),
         "end_frame": int(end_frame),
-        "particle_count": int(particle_count),
+        "variable_particle_count": True,
         "dtype": "float32",
         "components": 3,
         "frame_directory": FRAME_DIRECTORY,

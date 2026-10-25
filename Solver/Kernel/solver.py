@@ -11,6 +11,7 @@ from . import multigrid
 from . import output
 from . import particles as particle_methods
 from . import pressure_solve
+from . import source_particles
 from . import timing
 from . import velocity_update
 
@@ -119,31 +120,38 @@ def solver(config: dict, timings=None):
     fy = 0.0
     fz = 0.0
 
-    # ------------particles------------------
-    x = np.arange(1, nx - 1)[:, None, None]
-    initial_fluid = np.broadcast_to(x < 0.5 * nx, (nx - 2, ny - 2, nz - 2))
-    cells = np.argwhere(initial_fluid) + 1
-
-    particles_per_axis = 2
-    particles_per_cell = particles_per_axis**3
-    offsets_1d = (np.arange(particles_per_axis) + 0.5) / particles_per_axis
-    offsets = np.stack(
-        np.meshgrid(offsets_1d, offsets_1d, offsets_1d, indexing="ij"),
-        axis=-1,
-    ).reshape(-1, 3)
-
-    particles_host = np.ascontiguousarray(
-        (cells[:, None, :] + offsets[None, :, :]).reshape(-1, 3) * delta,
-        dtype=FIELD_DTYPE,
+    # ------------particles and static voxel masks------------------
+    sources, obstacle_mask_host = source_particles.load_static_masks(
+        simulation, grid_shape
     )
-    particle_velocity_host = np.zeros_like(particles_host)
+    rng = np.random.default_rng(0)
+    particles_per_cell = 8
+    particles_host = np.empty((0, 3), dtype=FIELD_DTYPE)
+    particle_velocity_host = np.empty((0, 3), dtype=FIELD_DTYPE)
+    particles_host, particle_velocity_host = source_particles.apply_sources(
+        particles_host,
+        particle_velocity_host,
+        sources,
+        obstacle_mask_host,
+        delta,
+        rng,
+        initial=True,
+    )
     number_of_particles = len(particles_host)
     print(f"Total particle count: {number_of_particles}")
 
     # ------------device arrays------------------
     # partciles
-    particles = helper.to_device(context, particles_host)
-    particle_velocity = helper.to_device(context, particle_velocity_host)
+    particles = (
+        helper.to_device(context, particles_host)
+        if number_of_particles
+        else helper.device_array(context, (1, 3))
+    )
+    particle_velocity = (
+        helper.to_device(context, particle_velocity_host)
+        if number_of_particles
+        else helper.device_array(context, (1, 3))
+    )
     (
         particle_work,
         particle_velocity_work,
@@ -156,6 +164,9 @@ def solver(config: dict, timings=None):
         number_of_particles,
     )
     particle_count = helper.device_array(context, grid_shape, dtype=np.int32)
+    obstacle_mask = helper.to_device(
+        context, np.ascontiguousarray(obstacle_mask_host, dtype=np.uint8)
+    )
 
     # velocity
     u = helper.device_array(context, grid_shape)
@@ -195,7 +206,6 @@ def solver(config: dict, timings=None):
         fps=fps,
         start_frame=start_frame,
         end_frame=end_frame,
-        particle_count=number_of_particles,
     )
     output.write_particles(particle_cache, particles_host, frame=start_frame)
     emit_message({"type": "stats", "frame": 0, "total_frames": total_frames})
@@ -210,6 +220,46 @@ def solver(config: dict, timings=None):
         t += solver_step * dt
         output_frame = (solver_step + 1) // steps_per_frame
         substep_index = solver_step % steps_per_frame
+
+        # Apply the stationary outflow and inflow masks before every step.
+        if number_of_particles:
+            cl.enqueue_copy(queue, particles_host, particles).wait()
+            cl.enqueue_copy(queue, particle_velocity_host, particle_velocity).wait()
+        particles_host, particle_velocity_host = source_particles.apply_sources(
+            particles_host,
+            particle_velocity_host,
+            sources,
+            obstacle_mask_host,
+            delta,
+            rng,
+        )
+        number_of_particles = len(particles_host)
+        if number_of_particles == 0:
+            if substep_index == steps_per_frame - 1:
+                output.write_particles(
+                    particle_cache,
+                    particles_host,
+                    frame=start_frame + output_frame,
+                )
+                emit_message(
+                    {
+                        "type": "stats",
+                        "frame": output_frame,
+                        "total_frames": total_frames,
+                    }
+                )
+            continue
+        particles = helper.to_device(context, particles_host)
+        particle_velocity = helper.to_device(context, particle_velocity_host)
+        (
+            particle_work,
+            particle_velocity_work,
+            particle_bin_counts,
+            particle_bin_scan_outputs,
+            particle_bin_scan_sums,
+        ) = particle_methods.create_particle_sort_buffers(
+            context, grid_shape, number_of_particles
+        )
 
         # ------------particle to grid-------------------
         with timings.section("solver", "particle_to_grid", queue):
@@ -237,6 +287,16 @@ def solver(config: dict, timings=None):
                 grid_shape,
                 delta,
                 particles_per_cell,
+            )
+
+        with timings.section("solver", "grid_obstacle_bc", queue):
+            (u, v, w), fluid_fraction = boundary_conditions.grid_obstacle_bc(
+                boundary_conditions_kernels,
+                queue,
+                (u, v, w),
+                fluid_fraction,
+                obstacle_mask,
+                grid_shape,
             )
 
         # ------------grid bc-------------------
@@ -280,6 +340,14 @@ def solver(config: dict, timings=None):
                 boundary_conditions_kernels,
                 queue,
                 (u, v, w),
+                grid_shape,
+            )
+            (u, v, w), fluid_fraction = boundary_conditions.grid_obstacle_bc(
+                boundary_conditions_kernels,
+                queue,
+                (u, v, w),
+                fluid_fraction,
+                obstacle_mask,
                 grid_shape,
             )
 
@@ -330,6 +398,14 @@ def solver(config: dict, timings=None):
                 (u, v, w),
                 grid_shape,
             )
+            (u, v, w), fluid_fraction = boundary_conditions.grid_obstacle_bc(
+                boundary_conditions_kernels,
+                queue,
+                (u, v, w),
+                fluid_fraction,
+                obstacle_mask,
+                grid_shape,
+            )
 
         # ------------grid to particle-------------------
         with timings.section("solver", "grid_to_particle", queue):
@@ -344,6 +420,13 @@ def solver(config: dict, timings=None):
                 grid_shape,
                 delta,
             )
+
+        # particle_to_grid sorts the arrays, so capture collision fallback
+        # positions only after that reordering has taken place.
+        previous_particles_host = np.empty(
+            (number_of_particles, 3), dtype=FIELD_DTYPE
+        )
+        cl.enqueue_copy(queue, previous_particles_host, particles).wait()
 
         # ------------advect particles-------------------
         with timings.section("solver", "advect_particles", queue):
@@ -367,6 +450,21 @@ def solver(config: dict, timings=None):
                 grid_shape,
                 delta,
             )
+
+        with timings.section("solver", "particle_obstacle_bc", queue):
+            cl.enqueue_copy(queue, particles_host, particles).wait()
+            cl.enqueue_copy(queue, particle_velocity_host, particle_velocity).wait()
+            particles_host, particle_velocity_host = (
+                source_particles.resolve_obstacle_collisions(
+                    previous_particles_host,
+                    particles_host,
+                    particle_velocity_host,
+                    obstacle_mask_host,
+                    delta,
+                )
+            )
+            cl.enqueue_copy(queue, particles, particles_host).wait()
+            cl.enqueue_copy(queue, particle_velocity, particle_velocity_host).wait()
 
         # ------------output-------------------
         if substep_index == steps_per_frame - 1:

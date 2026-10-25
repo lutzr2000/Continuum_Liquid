@@ -104,8 +104,9 @@ class ParticleCacheManager:
                 frame=frame
             )
         values = np.fromfile(filepath, dtype=np.float32)
-        expected = int(self.metadata["particle_count"]) * 3
-        if values.size != expected:
+        particle_count = self.metadata.get("particle_count")
+        expected = int(particle_count) * 3 if particle_count is not None else values.size
+        if values.size != expected or values.size % 3:
             raise ValueError(f"Invalid particle frame size: {filepath}")
         positions = values.reshape((-1, 3))
         positions += np.asarray(self.offset, dtype=np.float32)
