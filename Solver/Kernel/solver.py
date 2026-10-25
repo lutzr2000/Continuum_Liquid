@@ -139,7 +139,6 @@ def solver(config: dict, timings=None):
         initial=True,
     )
     number_of_particles = len(particles_host)
-    print(f"Total particle count: {number_of_particles}")
 
     # ------------device arrays------------------
     # partciles
@@ -212,7 +211,8 @@ def solver(config: dict, timings=None):
         start_frame=start_frame,
         end_frame=end_frame,
     )
-    output.write_particles(particle_cache, particles_host, frame=start_frame)
+    output_manager = output.create_output(context, particle_cache)
+    output.submit_host(output_manager, particles_host, frame=start_frame)
     emit_message({"type": "stats", "frame": 0, "total_frames": total_frames})
 
     # ------------time loop------------------
@@ -245,8 +245,8 @@ def solver(config: dict, timings=None):
         number_of_particles = len(particles_host)
         if number_of_particles == 0:
             if substep_index == steps_per_frame - 1:
-                output.write_particles(
-                    particle_cache,
+                output.submit_host(
+                    output_manager,
                     particles_host,
                     frame=start_frame + output_frame,
                 )
@@ -484,12 +484,11 @@ def solver(config: dict, timings=None):
         # ------------output-------------------
         if substep_index == steps_per_frame - 1:
             with timings.section("transfer", "particles_to_host", queue):
-                cl.enqueue_copy(queue, particles_host, particles).wait()
-
-            with timings.section("output", "write_particles"):
-                output.write_particles(
-                    particle_cache,
-                    particles_host,
+                output.submit_output(
+                    output_manager,
+                    queue=queue,
+                    particles=particles,
+                    particle_count=number_of_particles,
                     frame=start_frame + output_frame,
                 )
             emit_message(
@@ -499,3 +498,5 @@ def solver(config: dict, timings=None):
                     "total_frames": total_frames,
                 }
             )
+
+    output.close_output(output_manager)
