@@ -186,6 +186,7 @@ def solver(config: dict, timings=None):
         grid_shape,
         min_size=8,
     )
+    helper.fill_device(queue, pressure, 0.0)
 
     # flip
     fluid_fraction = helper.device_array(context, grid_shape)

@@ -37,7 +37,6 @@ def pressure_solve(
     grid_cell_count = nx * ny * nz
     u, v, w = velocity
 
-    helper.fill_device(queue, pressure, 0.0)
     kernels["pressure_rhs"](
         queue,
         (grid_cell_count,),
