@@ -60,6 +60,32 @@ inline float residual(__global const float *p,
     return b[index] - apply_operator(p, mask, diagonal, weight_x, weight_y, weight_z, inv_delta2, i, j, k, nx, ny, nz);
 }
 
+__kernel void projected_divergence(__global const float *p,
+                                   __global const float *b,
+                                   __global const float *mask,
+                                   __global const float *diagonal,
+                                   __global const float *weight_x,
+                                   __global const float *weight_y,
+                                   __global const float *weight_z,
+                                   __global float *divergence,
+                                   const float delta,
+                                   const float dt_over_rho,
+                                   const int nx,
+                                   const int ny,
+                                   const int nz) {
+    const int index = get_global_id(0);
+    if (index >= nx * ny * nz)
+        return;
+    const int3 cell = grid_coordinates(index, ny, nz);
+    if (!is_interior_cell(cell.x, cell.y, cell.z, nx, ny, nz) || mask[index] <= 0.0f) {
+        divergence[index] = 0.0f;
+        return;
+    }
+    const float inv_delta2 = 1.0f / (delta * delta);
+    divergence[index] = dt_over_rho * residual(p, b, mask, diagonal, weight_x, weight_y, weight_z, inv_delta2,
+                                                cell.x, cell.y, cell.z, nx, ny, nz);
+}
+
 __kernel void build_finest_operator(__global const float *mask,
                                     __global float *diagonal,
                                     __global float *weight_x,

@@ -48,7 +48,7 @@ def create_multigrid_levels(
     return p_levels, b_levels, mask_levels, operator_levels, level_shapes
 
 
-def v_cycle(
+def w_cycle(
     kernels: dict[str, cl.Kernel],
     queue: cl.CommandQueue,
     level: int,
@@ -67,7 +67,7 @@ def v_cycle(
     post_smooth: int,
     coarse_smooth_iterations: int,
 ) -> None:
-    """Run one dense multigrid V-cycle for ``laplace(p) = b``."""
+    """Run one dense multigrid W-cycle for ``laplace(p) = b``."""
     if level == 0:
         p, b, mask = p_level0, b_level0, mask_level0
         operator = operator_level0
@@ -122,7 +122,32 @@ def v_cycle(
         np.int32(coarse_shape[2]),
     )
 
-    v_cycle(
+    w_cycle(
+        kernels,
+        queue,
+        level + 1,
+        p_levels,
+        b_levels,
+        mask_levels,
+        operator_levels,
+        p_level0,
+        b_level0,
+        mask_level0,
+        operator_level0,
+        base_delta,
+        level_shapes,
+        level0_shape,
+        pre_smooth,
+        post_smooth,
+        coarse_smooth_iterations,
+    )
+
+    # One more recursive solve turns this into a W-cycle.  In 3-D the coarse
+    # level has only about 1/8 as many cells, so the extra branch is cheap,
+    # while it attacks precisely the smooth error that survived the original
+    # V-cycle.  The Galerkin operator and piecewise-constant transfer stay
+    # paired, which keeps the correction stable at irregular liquid surfaces.
+    w_cycle(
         kernels,
         queue,
         level + 1,

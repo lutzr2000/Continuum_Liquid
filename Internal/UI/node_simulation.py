@@ -64,7 +64,7 @@ class ContinuumLiquidSimulationNode(node_base.ContinuumLiquidBaseNode):
         max=100,
         soft_min=1,
         soft_max=10,
-        description="Number of pressure multigrid V-cycles per solver step",
+        description="Number of pressure multigrid W-cycles per solver step",
         options=set(),
     )  # type: ignore
 
