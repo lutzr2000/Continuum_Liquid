@@ -19,6 +19,7 @@ class ContinuumLiquidDomainNode(node_base.ContinuumLiquidBaseNode):
         unit="LENGTH",
         options=set()
     )  # type: ignore
+    
     lx: FloatProperty(
         name="Lx",
         default=10.0,
@@ -27,6 +28,7 @@ class ContinuumLiquidDomainNode(node_base.ContinuumLiquidBaseNode):
         unit="LENGTH",
         options=set()
     )  # type: ignore
+
     ly: FloatProperty(
         name="Ly",
         default=10.0,
@@ -35,6 +37,7 @@ class ContinuumLiquidDomainNode(node_base.ContinuumLiquidBaseNode):
         unit="LENGTH",
         options=set(),
     )  # type: ignore
+
     lz: FloatProperty(
         name="Lz",
         default=10.0,

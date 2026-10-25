@@ -33,6 +33,7 @@ class ContinuumLiquidSimulationNode(node_base.ContinuumLiquidBaseNode):
         default="CPU",
         options=set(),
     )  # type: ignore
+    
     start_frame: IntProperty(
         name="Start Frame",
         default=1,
@@ -41,6 +42,7 @@ class ContinuumLiquidSimulationNode(node_base.ContinuumLiquidBaseNode):
         options=set(),
         update=_update_start_frame,
     )  # type: ignore
+
     end_frame: IntProperty(
         name="End Frame",
         default=250,
@@ -49,6 +51,7 @@ class ContinuumLiquidSimulationNode(node_base.ContinuumLiquidBaseNode):
         options=set(),
         update=_update_end_frame,
     )  # type: ignore
+
     substeps: IntProperty(
         name="Substeps",
         default=1,
@@ -57,6 +60,7 @@ class ContinuumLiquidSimulationNode(node_base.ContinuumLiquidBaseNode):
         description="Additional solver steps per output frame",
         options=set(),
     )  # type: ignore
+
     iterations: IntProperty(
         name="Iterations",
         default=1,

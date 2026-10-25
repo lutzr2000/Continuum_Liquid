@@ -55,18 +55,6 @@ def safe_register_class(cls):
     bpy.utils.register_class(cls)
 
 
-def reset_node_body_colors():
-    node_groups = getattr(bpy.data, "node_groups", None)
-    if node_groups is None:
-        return 0.1
-
-    for node_tree in node_groups:
-        if node_tree.bl_idname != ContinuumLiquidNodeTree.bl_idname:
-            continue
-        for node in node_tree.nodes:
-            node.use_custom_color = False
-    return None
-
 
 def register():
     for cls in classes:
@@ -80,11 +68,6 @@ def register():
     register_node_categories(NODE_CATEGORIES_ID, build_node_categories())
     if load_result.particle_cache_frame_change not in bpy.app.handlers.frame_change_post:
         bpy.app.handlers.frame_change_post.append(load_result.particle_cache_frame_change)
-    if (
-        reset_node_body_colors() is not None
-        and not bpy.app.timers.is_registered(reset_node_body_colors)
-    ):
-        bpy.app.timers.register(reset_node_body_colors, first_interval=0.1)
 
 
 def unregister():
@@ -92,9 +75,6 @@ def unregister():
     load_result.PARTICLE_CACHE.disable()
     if load_result.particle_cache_frame_change in bpy.app.handlers.frame_change_post:
         bpy.app.handlers.frame_change_post.remove(load_result.particle_cache_frame_change)
-
-    if bpy.app.timers.is_registered(reset_node_body_colors):
-        bpy.app.timers.unregister(reset_node_body_colors)
 
     try:
         unregister_node_categories(NODE_CATEGORIES_ID)

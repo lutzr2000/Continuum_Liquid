@@ -1,10 +1,10 @@
 import bpy
 import gpu
+from . import baking
 from gpu_extras.batch import batch_for_shader
 
 from .domain_grid import dimensions
 from . import load_result
-
 
 draw_handler = None
 current_drawn_domain = None
@@ -20,9 +20,6 @@ class ContinuumLiquid_OT_viewer_toggle_domain(bpy.types.Operator):
     def execute(self, context):
         node = getattr(context, "node", None)
         domain_node = get_linked_domain_node(node)
-        if domain_node is None:
-            self.report({"ERROR"}, "Connect Domain -> Simulation -> Viewer first.")
-            return {"CANCELLED"}
 
         node_tree = getattr(domain_node, "id_data", None)
         if domain_preview_enabled(domain_node):
@@ -57,21 +54,15 @@ class ContinuumLiquid_OT_viewer_toggle_particles(bpy.types.Operator):
             self.report({"ERROR"}, "No Output node is connected to this simulation")
             return {"CANCELLED"}
 
-        from . import baking
-
         directory = baking.get_bake_directory(output_node)
         if directory is None:
             self.report({"ERROR"}, "No particle bake found")
             return {"CANCELLED"}
         manager.point_size = float(getattr(node, "particle_point_size", 4.0))
-        manager.color = tuple(
-            getattr(node, "particle_color", (0.04, 0.32, 1.0, 1.0))
-        )
-        try:
-            manager.load_bake(directory, simulation_node=simulation_node)
-        except Exception as exc:
-            self.report({"ERROR"}, f"Could not load particles: {exc}")
-            return {"CANCELLED"}
+        manager.color = tuple(getattr(node, "particle_color", (0.04, 0.32, 1.0, 1.0)))
+
+        manager.load_bake(directory, simulation_node=simulation_node)
+
         return {"FINISHED"}
 
 
@@ -79,21 +70,28 @@ def get_linked_domain_node(node):
     """Resolve Domain -> Simulation by traversing the viewer's Result input."""
     if node is None:
         return None
+
     result_socket = node.inputs.get("Result")
     if result_socket is None:
         return None
 
     for link in result_socket.links:
         simulation_node = getattr(link, "from_node", None)
-        if getattr(simulation_node, "bl_idname", "") != "CONTINUUM_LIQUID_SIMULATION_NODE":
+        if (
+            getattr(simulation_node, "bl_idname", "")
+            != "CONTINUUM_LIQUID_SIMULATION_NODE"
+        ):
             continue
+
         domain_socket = simulation_node.inputs.get("Domain")
         if domain_socket is None:
             continue
+
         for domain_link in domain_socket.links:
             domain_node = getattr(domain_link, "from_node", None)
             if getattr(domain_node, "bl_idname", "") == "CONTINUUM_LIQUID_DOMAIN_NODE":
                 return domain_node
+
     return None
 
 
@@ -101,6 +99,7 @@ def get_linked_simulation_node(node):
     if node is None:
         return None
     socket = node.inputs.get("Result")
+
     if socket is not None:
         for link in socket.links:
             simulation = getattr(link, "from_node", None)
@@ -109,6 +108,7 @@ def get_linked_simulation_node(node):
                 == "CONTINUUM_LIQUID_SIMULATION_NODE"
             ):
                 return simulation
+
     return None
 
 
@@ -116,14 +116,17 @@ def get_linked_output_node(simulation_node):
     node_tree = getattr(simulation_node, "id_data", None)
     if node_tree is None:
         return None
+
     for node in node_tree.nodes:
         if getattr(node, "bl_idname", "") != "CONTINUUM_LIQUID_OUTPUT_NODE":
             continue
+
         socket = node.inputs.get("Result")
         if socket is not None and any(
             getattr(link, "from_node", None) == simulation_node for link in socket.links
         ):
             return node
+
     return None
 
 
@@ -150,9 +153,11 @@ def disable_domain_preview():
     global draw_handler, current_drawn_domain
 
     current_drawn_domain = None
+
     if draw_handler is not None:
         bpy.types.SpaceView3D.draw_handler_remove(draw_handler, "WINDOW")
         draw_handler = None
+
     redraw_viewport()
     redraw_ui()
 
@@ -162,10 +167,12 @@ def redraw_viewport():
     window_manager = getattr(bpy.context, "window_manager", None)
     if window_manager is None:
         return
+
     for window in window_manager.windows:
         screen = getattr(window, "screen", None)
         if screen is None:
             continue
+
         for area in screen.areas:
             if area.type == "VIEW_3D":
                 area.tag_redraw()
@@ -176,10 +183,12 @@ def redraw_ui():
     window_manager = getattr(bpy.context, "window_manager", None)
     if window_manager is None:
         return
+
     for window in window_manager.windows:
         screen = getattr(window, "screen", None)
         if screen is None:
             continue
+
         for area in screen.areas:
             if area.type in {"NODE_EDITOR", "PROPERTIES"}:
                 area.tag_redraw()
@@ -194,6 +203,7 @@ def draw_preview():
     if node_tree is None:
         disable_domain_preview()
         return
+
     active_domain = node_tree.nodes.get(current_drawn_domain.get("node_name", ""))
 
     if not overlay_enabled():
@@ -223,11 +233,15 @@ def draw_preview():
 def overlay_enabled():
     """Return whether overlays are enabled in the currently drawing 3D view."""
     space_data = getattr(bpy.context, "space_data", None)
+
     if space_data is None or getattr(space_data, "type", "") != "VIEW_3D":
         return True
+
     overlay = getattr(space_data, "overlay", None)
+
     if overlay is None:
         return True
+
     return bool(getattr(overlay, "show_overlays", True))
 
 
@@ -242,7 +256,9 @@ def build_segments(domain_node):
         min_corner[1] + depth,
         min_corner[2] + height,
     )
+
     domain_lines = box_segments(min_corner, max_corner)
+
     cell_lines = box_segments(
         min_corner,
         (
@@ -251,6 +267,7 @@ def build_segments(domain_node):
             min_corner[2] + min(resolution, height),
         ),
     )
+
     return domain_lines, cell_lines
 
 
@@ -258,18 +275,37 @@ def box_segments(min_corner, max_corner):
     """Build the line segments for a wireframe box."""
     x0, y0, z0 = min_corner
     x1, y1, z1 = max_corner
+
     corners = (
-        (x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0),
-        (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1),
+        (x0, y0, z0),
+        (x1, y0, z0),
+        (x1, y1, z0),
+        (x0, y1, z0),
+        (x0, y0, z1),
+        (x1, y0, z1),
+        (x1, y1, z1),
+        (x0, y1, z1),
     )
+
     edges = (
-        (0, 1), (1, 2), (2, 3), (3, 0),
-        (4, 5), (5, 6), (6, 7), (7, 4),
-        (0, 4), (1, 5), (2, 6), (3, 7),
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 0),
+        (4, 5),
+        (5, 6),
+        (6, 7),
+        (7, 4),
+        (0, 4),
+        (1, 5),
+        (2, 6),
+        (3, 7),
     )
+
     segments = []
     for start_index, end_index in edges:
         segments.extend((corners[start_index], corners[end_index]))
+
     return segments
 
 
@@ -277,9 +313,11 @@ def domain_preview_enabled(domain_node):
     """Return whether the preview is active for the given domain node."""
     if not current_drawn_domain or domain_node is None:
         return False
+    
     node_tree = bpy.data.node_groups.get(current_drawn_domain.get("node_tree_name", ""))
     if node_tree is None:
         return False
+    
     active_domain = node_tree.nodes.get(current_drawn_domain.get("node_name", ""))
     if active_domain is None:
         return False

@@ -38,11 +38,7 @@ class ParticleCacheManager:
     def load_bake(self, directory, simulation_node=None):
         directory = Path(directory).resolve()
         metadata_path = directory / CACHE_FILENAME
-        if not metadata_path.is_file():
-            raise FileNotFoundError(f"Particle cache not found: {metadata_path}")
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        if metadata.get("dtype") != "float32" or metadata.get("components") != 3:
-            raise ValueError("Unsupported particle cache format")
 
         self.loaded_directory = str(directory)
         self.metadata = metadata
@@ -85,9 +81,11 @@ class ParticleCacheManager:
         frame = min(end, max(start, int(frame)))
         if frame == self.loaded_frame:
             return
+        
         frame_directory = Path(self.loaded_directory) / self.metadata["frame_directory"]
         filename = self.metadata["frame_pattern"].format(frame=frame)
         filepath = frame_directory / filename
+
         if not filepath.is_file():
             available = [
                 candidate
@@ -103,11 +101,8 @@ class ParticleCacheManager:
             filepath = frame_directory / self.metadata["frame_pattern"].format(
                 frame=frame
             )
+
         values = np.fromfile(filepath, dtype=np.float32)
-        particle_count = self.metadata.get("particle_count")
-        expected = int(particle_count) * 3 if particle_count is not None else values.size
-        if values.size != expected or values.size % 3:
-            raise ValueError(f"Invalid particle frame size: {filepath}")
         positions = values.reshape((-1, 3))
         positions += np.asarray(self.offset, dtype=np.float32)
         self.positions = positions
@@ -119,15 +114,18 @@ class ParticleCacheManager:
     def draw(self):
         if self.positions is None or not self._overlays_enabled():
             return
+        
         shader = gpu.shader.from_builtin("UNIFORM_COLOR")
         gpu.state.blend_set("ALPHA")
         gpu.state.depth_test_set("LESS_EQUAL")
         gpu.state.point_size_set(float(self.point_size))
         shader.bind()
         shader.uniform_float("color", self.color)
+
         if self.batch is None or self.batch_frame != self.loaded_frame:
             self.batch = batch_for_shader(shader, "POINTS", {"pos": self.positions})
             self.batch_frame = self.loaded_frame
+            
         self.batch.draw(shader)
         gpu.state.point_size_set(1.0)
         gpu.state.depth_test_set("NONE")
