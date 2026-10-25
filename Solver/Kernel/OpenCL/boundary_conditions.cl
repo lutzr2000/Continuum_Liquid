@@ -85,6 +85,11 @@ __kernel void particle_domain_bc(__global float *particles,
     const int3 hit_upper = position > upper;
     const int3 hit = hit_lower | hit_upper;
 
+    // Preserve the overshoot distance instead of snapping every colliding
+    // particle onto the exact same wall plane.  This avoids collapsing the
+    // particle distribution into dense lines where two walls meet.
+    position = select(position, 2.0f * lower - position, hit_lower);
+    position = select(position, 2.0f * upper - position, hit_upper);
     position = clamp(position, (float3)(lower), upper);
     velocity = select(velocity, (float3)(0.0f), hit);
     vstore3(position, 0, particles + offset);
