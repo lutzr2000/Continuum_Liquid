@@ -1,7 +1,7 @@
 import bpy
 from nodeitems_utils import register_node_categories, unregister_node_categories
 
-from .Core import baking, load_result, viewer
+from .Core import baking, load_result, solver_status, viewer
 from .UI.node_output import ContinuumLiquidOutputNode
 from .UI.node_domain import ContinuumLiquidDomainNode
 from .UI.node_geometry import ContinuumLiquidGeometryNode
@@ -57,6 +57,7 @@ def safe_register_class(cls):
 
 
 def register():
+    solver_status.refresh_opencl_devices()
     for cls in classes:
         safe_register_class(cls)
 

@@ -58,6 +58,14 @@ class RunTimings:
                 )
 
 
+class DisabledTimings:
+    """No-op timing collector used by normal production runs."""
+
+    @contextmanager
+    def section(self, _group: str, _name: str, queue=None) -> None:
+        yield
+
+
 def profiled_run(function: Any) -> Any:
     """Decorate a solver function with timing collection and reporting."""
 
@@ -66,7 +74,10 @@ def profiled_run(function: Any) -> Any:
         if kwargs.get("timings") is not None:
             return function(*args, **kwargs)
 
-        timings = RunTimings()
+        config = args[0] if args else kwargs.get("config", {})
+        settings = ((config or {}).get("simulation") or {}).get("settings") or {}
+        enabled = bool(settings.get("debug_timing", False))
+        timings = RunTimings() if enabled else DisabledTimings()
         kwargs["timings"] = timings
         start = perf_counter()
         status = "failed / partial"
@@ -75,6 +86,7 @@ def profiled_run(function: Any) -> Any:
             status = "finished / clean stop"
             return result
         finally:
-            timings.report(perf_counter() - start, status)
+            if enabled:
+                timings.report(perf_counter() - start, status)
 
     return wrapped

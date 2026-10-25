@@ -24,10 +24,11 @@ def solver(config: dict, timings=None):
     settings = simulation.get("settings") or {}
 
     # ------------device-------------------
-    device = helper.select_opencl_device()
+    solver_backend = str(settings.get("solver_backend", "CPU")).strip().upper()
+    device = helper.select_opencl_device(settings)
     kernel_config.configure_for_device(
         device,
-        "CPU",
+        solver_backend,
     )
 
     # ------------context-------------------
@@ -142,6 +143,7 @@ def solver(config: dict, timings=None):
 
     # ------------device arrays------------------
     # partciles
+    particle_capacity = max(1, number_of_particles)
     particles = (
         helper.to_device(context, particles_host)
         if number_of_particles
@@ -152,6 +154,7 @@ def solver(config: dict, timings=None):
         if number_of_particles
         else helper.device_array(context, (1, 3))
     )
+    previous_particles = helper.device_array(context, (particle_capacity, 3))
     (
         particle_work,
         particle_velocity_work,
@@ -161,7 +164,7 @@ def solver(config: dict, timings=None):
     ) = particle_methods.create_particle_sort_buffers(
         context,
         grid_shape,
-        number_of_particles,
+        particle_capacity,
     )
     particle_count = helper.device_array(context, grid_shape, dtype=np.int32)
     obstacle_mask = helper.to_device(
@@ -212,6 +215,9 @@ def solver(config: dict, timings=None):
 
     # ------------time loop------------------
     t = 0
+    dynamic_sources = any(
+        source.get("type") in {"INFLOW", "OUTFLOW"} for source in sources
+    )
     for solver_step in range(total_solver_steps):
         if cancel_event is not None and cancel_event.is_set():
             print("Bake cancellation requested. Stopping the simulation cleanly...")
@@ -222,17 +228,18 @@ def solver(config: dict, timings=None):
         substep_index = solver_step % steps_per_frame
 
         # Apply the stationary outflow and inflow masks before every step.
-        if number_of_particles:
+        if dynamic_sources and number_of_particles:
             cl.enqueue_copy(queue, particles_host, particles).wait()
             cl.enqueue_copy(queue, particle_velocity_host, particle_velocity).wait()
-        particles_host, particle_velocity_host = source_particles.apply_sources(
-            particles_host,
-            particle_velocity_host,
-            sources,
-            obstacle_mask_host,
-            delta,
-            rng,
-        )
+        if dynamic_sources:
+            particles_host, particle_velocity_host = source_particles.apply_sources(
+                particles_host,
+                particle_velocity_host,
+                sources,
+                obstacle_mask_host,
+                delta,
+                rng,
+            )
         number_of_particles = len(particles_host)
         if number_of_particles == 0:
             if substep_index == steps_per_frame - 1:
@@ -249,17 +256,23 @@ def solver(config: dict, timings=None):
                     }
                 )
             continue
-        particles = helper.to_device(context, particles_host)
-        particle_velocity = helper.to_device(context, particle_velocity_host)
-        (
-            particle_work,
-            particle_velocity_work,
-            particle_bin_counts,
-            particle_bin_scan_outputs,
-            particle_bin_scan_sums,
-        ) = particle_methods.create_particle_sort_buffers(
-            context, grid_shape, number_of_particles
-        )
+        if number_of_particles > particle_capacity:
+            particle_capacity = max(number_of_particles, (particle_capacity * 3) // 2)
+            particles = helper.device_array(context, (particle_capacity, 3))
+            particle_velocity = helper.device_array(context, (particle_capacity, 3))
+            previous_particles = helper.device_array(context, (particle_capacity, 3))
+            (
+                particle_work,
+                particle_velocity_work,
+                particle_bin_counts,
+                particle_bin_scan_outputs,
+                particle_bin_scan_sums,
+            ) = particle_methods.create_particle_sort_buffers(
+                context, grid_shape, particle_capacity
+            )
+        if dynamic_sources:
+            cl.enqueue_copy(queue, particles, particles_host)
+            cl.enqueue_copy(queue, particle_velocity, particle_velocity_host)
 
         # ------------particle to grid-------------------
         with timings.section("solver", "particle_to_grid", queue):
@@ -423,10 +436,12 @@ def solver(config: dict, timings=None):
 
         # particle_to_grid sorts the arrays, so capture collision fallback
         # positions only after that reordering has taken place.
-        previous_particles_host = np.empty(
-            (number_of_particles, 3), dtype=FIELD_DTYPE
+        cl.enqueue_copy(
+            queue,
+            previous_particles,
+            particles,
+            byte_count=number_of_particles * 3 * np.dtype(FIELD_DTYPE).itemsize,
         )
-        cl.enqueue_copy(queue, previous_particles_host, particles).wait()
 
         # ------------advect particles-------------------
         with timings.section("solver", "advect_particles", queue):
@@ -452,19 +467,17 @@ def solver(config: dict, timings=None):
             )
 
         with timings.section("solver", "particle_obstacle_bc", queue):
-            cl.enqueue_copy(queue, particles_host, particles).wait()
-            cl.enqueue_copy(queue, particle_velocity_host, particle_velocity).wait()
-            particles_host, particle_velocity_host = (
-                source_particles.resolve_obstacle_collisions(
-                    previous_particles_host,
-                    particles_host,
-                    particle_velocity_host,
-                    obstacle_mask_host,
-                    delta,
-                )
+            particles, particle_velocity = boundary_conditions.particle_obstacle_bc(
+                boundary_conditions_kernels,
+                queue,
+                particles,
+                previous_particles,
+                particle_velocity,
+                obstacle_mask,
+                number_of_particles,
+                grid_shape,
+                delta,
             )
-            cl.enqueue_copy(queue, particles, particles_host).wait()
-            cl.enqueue_copy(queue, particle_velocity, particle_velocity_host).wait()
 
         # ------------output-------------------
         if substep_index == steps_per_frame - 1:

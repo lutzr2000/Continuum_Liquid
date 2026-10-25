@@ -54,11 +54,14 @@ def fill_source(particles, velocities, source, obstacle_mask, delta, rng):
     counts = np.zeros(source_mask.shape, dtype=np.int32)
     particle_cell_indices = particle_cells(particles, delta, source_mask.shape)
     if len(particle_cell_indices):
-        np.add.at(
-            counts,
-            tuple(particle_cell_indices[:, axis] for axis in range(3)),
-            1,
+        flat_indices = np.ravel_multi_index(
+            particle_cell_indices.T,
+            source_mask.shape,
         )
+        counts.flat[:] = np.bincount(
+            flat_indices,
+            minlength=source_mask.size,
+        ).astype(np.int32, copy=False)
     missing = np.maximum(0, target - counts[tuple(cells.T)])
     spawn_cells = np.repeat(cells, missing, axis=0)
     if len(spawn_cells) == 0:

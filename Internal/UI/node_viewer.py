@@ -1,4 +1,4 @@
-from bpy.props import FloatProperty, FloatVectorProperty
+from bpy.props import BoolProperty, FloatProperty, FloatVectorProperty
 
 from . import node_base, sockets
 from ..Core import load_result, viewer
@@ -41,6 +41,13 @@ class ContinuumLiquidViewerNode(node_base.ContinuumLiquidBaseNode):
         options=set(),
     )  # type: ignore
 
+    debug_timing: BoolProperty(
+        name="Debug Timing",
+        description="Collect detailed solver timings (adds synchronization overhead)",
+        default=False,
+        options=set(),
+    )  # type: ignore
+
     def _sync_node(self):
         self._ensure_socket(
             self.inputs,
@@ -69,3 +76,5 @@ class ContinuumLiquidViewerNode(node_base.ContinuumLiquidBaseNode):
             text="Hide Particles" if particles_visible else "Show Particles",
             icon="HIDE_ON" if particles_visible else "HIDE_OFF",
         )
+        column.separator()
+        column.prop(self, "debug_timing")

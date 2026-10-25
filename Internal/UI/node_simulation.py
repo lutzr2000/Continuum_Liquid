@@ -1,7 +1,12 @@
 import bpy
-from bpy.props import EnumProperty, IntProperty
+from bpy.props import BoolVectorProperty, EnumProperty, IntProperty
 
 from . import node_base, sockets
+from ..Core import solver_status
+
+
+def _default_device_selection():
+    return (True,) + (False,) * (solver_status.MAX_SELECTABLE_DEVICES - 1)
 
 
 def _update_start_frame(self, _context):
@@ -33,6 +38,31 @@ class ContinuumLiquidSimulationNode(node_base.ContinuumLiquidBaseNode):
         default="CPU",
         options=set(),
     )  # type: ignore
+
+    cpu_devices: BoolVectorProperty(
+        name="CPU Devices",
+        size=solver_status.MAX_SELECTABLE_DEVICES,
+        default=_default_device_selection(),
+        options=set(),
+    )  # type: ignore
+
+    gpu_devices: BoolVectorProperty(
+        name="GPU Devices",
+        size=solver_status.MAX_SELECTABLE_DEVICES,
+        default=_default_device_selection(),
+        options=set(),
+    )  # type: ignore
+
+    def selected_opencl_devices(self, backend=None):
+        backend = str(backend or self.solver_backend).upper()
+        devices = solver_status.opencl_devices.get(backend, ())
+        selection = self.gpu_devices if backend == "GPU" else self.cpu_devices
+        return [
+            dict(device) for index, device in enumerate(devices) if selection[index]
+        ]
+
+    def has_selected_opencl_device(self):
+        return bool(self.selected_opencl_devices())
     
     start_frame: IntProperty(
         name="Start Frame",
@@ -122,6 +152,22 @@ class ContinuumLiquidSimulationNode(node_base.ContinuumLiquidBaseNode):
         solver_row = layout.row(align=True)
         solver_row.prop_enum(self, "solver_backend", "CPU")
         solver_row.prop_enum(self, "solver_backend", "GPU")
+
+        backend = str(self.solver_backend).upper()
+        devices = solver_status.opencl_devices.get(backend, ())
+        selection_property = "gpu_devices" if backend == "GPU" else "cpu_devices"
+        device_box = layout.box()
+        device_box.label(text=f"{backend} Devices")
+        if not devices:
+            device_box.label(text="No device found", icon="ERROR")
+        else:
+            for index, device in enumerate(devices):
+                device_box.prop(
+                    self,
+                    selection_property,
+                    index=index,
+                    text=device["device_name"],
+                )
 
         for title, property_names in self.property_groups:
             self._draw_group(layout, title, property_names)

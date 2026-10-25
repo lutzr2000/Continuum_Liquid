@@ -117,3 +117,25 @@ __kernel void grid_obstacle_bc(__global float *u,
     if (y_solid) v[index] = 0.0f;
     if (z_solid) w[index] = 0.0f;
 }
+
+__kernel void particle_obstacle_bc(__global float *particles,
+                                   __global const float *previous_particles,
+                                   __global float *particle_velocity,
+                                   __global const uchar *obstacle,
+                                   const int number_of_particles,
+                                   const float inv_dx,
+                                   const int nx,
+                                   const int ny,
+                                   const int nz) {
+    const int particle_index = get_global_id(0);
+    if (particle_index >= number_of_particles)
+        return;
+    const int offset = 3 * particle_index;
+    const float3 position = vload3(0, particles + offset);
+    const int3 cell = clamp(convert_int3_rtz(position * inv_dx),
+                            (int3)(0), (int3)(nx - 1, ny - 1, nz - 1));
+    if (!obstacle[grid_index(cell.x, cell.y, cell.z, ny, nz)])
+        return;
+    vstore3(vload3(0, previous_particles + offset), 0, particles + offset);
+    vstore3((float3)(0.0f), 0, particle_velocity + offset);
+}

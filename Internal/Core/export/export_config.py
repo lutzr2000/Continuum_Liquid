@@ -76,6 +76,11 @@ def build_config_dict(output_node):
         for node in linked_nodes(simulation_node, "Obstacles")
         if getattr(node, "bl_idname", "") == "CONTINUUM_LIQUID_OBSTACLE_NODE"
     ]
+    viewer_nodes = [
+        node
+        for node in linked_nodes(simulation_node, "Result", direction="output")
+        if getattr(node, "bl_idname", "") == "CONTINUUM_LIQUID_VIEWER_NODE"
+    ]
 
     return {
         "simulation": {
@@ -83,11 +88,16 @@ def build_config_dict(output_node):
             "output_path": str(output_path),
             "settings": {
                 "solver_backend": str(simulation_node.solver_backend),
+                "compute_devices": simulation_node.selected_opencl_devices(),
                 "start_frame": int(simulation_node.start_frame),
                 "end_frame": int(simulation_node.end_frame),
                 "fps": int(output_node.fps),
                 "substeps": int(simulation_node.substeps),
                 "iterations": int(simulation_node.iterations),
+                "debug_timing": any(
+                    bool(getattr(node, "debug_timing", False))
+                    for node in viewer_nodes
+                ),
             },
             "domain": {
                 "resolution": float(domain_node.resolution),

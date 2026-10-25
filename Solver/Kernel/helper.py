@@ -48,17 +48,25 @@ def load_program(context, path):
     return kernels
 
 
-def select_opencl_device():
+def select_opencl_device(settings):
+    """Resolve the first UI-selected OpenCL device from exported indices."""
     platforms = cl.get_platforms()
     if not platforms:
         raise RuntimeError("No OpenCL platform found")
 
-    for platform in platforms:
-        devices = platform.get_devices(device_type=cl.device_type.CPU)
-        if devices:
-            return devices[0]
-
-    raise RuntimeError("No OpenCL CPU device found")
+    backend = str(settings.get("solver_backend", "GPU")).upper()
+    device_type = {
+        "CPU": cl.device_type.CPU,
+        "GPU": cl.device_type.GPU,
+    }.get(backend)
+    selected_devices = settings.get("compute_devices") or ()
+    if not selected_devices:
+        raise RuntimeError(f"No OpenCL {backend} device selected")
+    selected = selected_devices[0]
+    platform_index = int(selected["platform_index"])
+    device_index = int(selected["device_index"])
+    platform = platforms[platform_index]
+    return platform.get_devices(device_type=device_type)[device_index]
 
 
 def to_device(context, array):
