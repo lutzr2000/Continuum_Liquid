@@ -169,9 +169,6 @@ def solver(config: dict, timings=None):
     # pressure
     pressure = helper.device_array(context, grid_shape)
     pressure_rhs = helper.device_array(context, grid_shape)
-    pressure_divergence = helper.device_array(context, grid_shape)
-    pressure_divergence_host = np.empty(grid_shape, dtype=FIELD_DTYPE)
-    fluid_fraction_host = np.empty(grid_shape, dtype=FIELD_DTYPE)
     pressure_operator = tuple(helper.device_array(context, grid_shape) for _ in range(4))
 
     # ------------multigrid------------------
@@ -202,7 +199,6 @@ def solver(config: dict, timings=None):
     )
     output.write_particles(particle_cache, particles_host, frame=start_frame)
     emit_message({"type": "stats", "frame": 0, "total_frames": total_frames})
-    frame_divergence_series = []
 
     # ------------time loop------------------
     t = 0
@@ -289,7 +285,7 @@ def solver(config: dict, timings=None):
 
         # ------------pressure solve-------------------
         with timings.section("solver", "pressure_solve", queue):
-            pressure, divergence_per_cycle = pressure_solve.pressure_solve(
+            pressure = pressure_solve.pressure_solve(
                 pressure_solve_kernels,
                 multigrid_kernels,
                 boundary_conditions_kernels,
@@ -298,9 +294,6 @@ def solver(config: dict, timings=None):
                 fluid_fraction,
                 pressure,
                 pressure_rhs,
-                pressure_divergence,
-                pressure_divergence_host,
-                fluid_fraction_host,
                 multigrid_pressure_levels,
                 multigrid_rhs_levels,
                 multigrid_mask_levels,
@@ -313,7 +306,6 @@ def solver(config: dict, timings=None):
                 multigrid_cycles,
                 grid_shape,
             )
-            frame_divergence_series.append(divergence_per_cycle)
 
         # ------------pressure correction-------------------
         with timings.section("solver", "pressure_correction", queue):
@@ -387,12 +379,6 @@ def solver(config: dict, timings=None):
                     particles_host,
                     frame=start_frame + output_frame,
                 )
-                output.write_divergence_plot(
-                    particle_cache,
-                    frame=start_frame + output_frame,
-                    series=frame_divergence_series,
-                )
-                frame_divergence_series = []
             emit_message(
                 {
                     "type": "stats",

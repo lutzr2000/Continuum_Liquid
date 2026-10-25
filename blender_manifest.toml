@@ -25,19 +25,6 @@ wheels = [
     "./wheels/pyopencl-2026.1.4-cp313-cp313-win_amd64.whl",
     "./wheels/pytools-2026.1.1-py3-none-any.whl",
     "./wheels/siphash24-1.9-cp313-cp313-win_amd64.whl",
-
-    # Matplotlib / Pyplot
-    "./pyplot/contourpy-1.4.0-cp313-cp313-win_amd64.whl",
-    "./pyplot/cycler-0.12.1-py3-none-any.whl",
-    "./pyplot/fonttools-4.67.0-cp313-cp313-win_amd64.whl",
-    "./pyplot/kiwisolver-1.5.1-cp313-cp313-win_amd64.whl",
-    "./pyplot/matplotlib-3.11.2-cp313-cp313-win_amd64.whl",
-    "./pyplot/packaging-26.3-py3-none-any.whl",
-    "./pyplot/pillow-13.0.0-cp313-cp313-win_amd64.whl",
-    "./pyplot/pyparsing-3.3.3-py3-none-any.whl",
-    "./pyplot/python_dateutil-3.0.0-py2.py3-none-any.whl",
-    "./pyplot/six-1.17.0-py2.py3-none-any.whl",
-    "./pyplot/tzdata-2026.5-py2.py3-none-any.whl",
 ]
 
 [permissions]

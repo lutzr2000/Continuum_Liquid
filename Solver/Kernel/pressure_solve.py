@@ -1,8 +1,6 @@
 import numpy as np
-import pyopencl as cl
 
 from . import boundary_conditions
-from . import helper
 from . import kernel_config
 from . import multigrid
 
@@ -18,9 +16,6 @@ def pressure_solve(
     fluid_fraction,
     pressure,
     rhs,
-    divergence_work,
-    divergence_host,
-    fluid_fraction_host,
     p_levels,
     b_levels,
     mask_levels,
@@ -63,32 +58,6 @@ def pressure_solve(
         np.int32(nz),
     )
 
-    cl.enqueue_copy(queue, fluid_fraction_host, fluid_fraction).wait()
-    active_fluid = fluid_fraction_host > 0.0
-
-    def measure_projected_divergence():
-        multigrid_kernels["projected_divergence"](
-            queue,
-            (grid_cell_count,),
-            None,
-            pressure,
-            rhs,
-            fluid_fraction,
-            *operator_level0,
-            divergence_work,
-            FIELD_DTYPE(dx),
-            FIELD_DTYPE(dt / rho),
-            np.int32(nx),
-            np.int32(ny),
-            np.int32(nz),
-        )
-        cl.enqueue_copy(queue, divergence_host, divergence_work).wait()
-        if not np.any(active_fluid):
-            return 0.0
-        values = divergence_host[active_fluid].astype(np.float64, copy=False)
-        return float(np.sqrt(np.mean(values * values)))
-
-    divergence_per_cycle = [measure_projected_divergence()]
     for _ in range(num_vcycles):
         multigrid.w_cycle(
             multigrid_kernels,
@@ -112,10 +81,8 @@ def pressure_solve(
             # the convergence rate of the whole multigrid cycle.
             coarse_smooth_iterations=64,
         )
-        divergence_per_cycle.append(measure_projected_divergence())
-
     boundary_conditions.neumann_domain_bc(boundary_kernels, queue, pressure, grid_shape)
-    return pressure, divergence_per_cycle
+    return pressure
 
 
 def pressure_correction(
