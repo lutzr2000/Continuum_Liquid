@@ -13,6 +13,8 @@ PARTICLE_RESULTS = load_result.PARTICLE_CACHE
 bake_running = False
 progress = 0.0
 progress_text = "0%"
+particle_count = 0
+particle_stats_available = False
 status_workspace = None
 
 
@@ -113,7 +115,7 @@ class CONTINUUM_LIQUID_OT_bake(bpy.types.Operator):
     bl_description = "Run the solver and write a new particle cache"
 
     def execute(self, context):
-        global bake_running
+        global bake_running, particle_count, particle_stats_available
 
         self.output_node = get_output_node(context)
         self.simulation_node = get_connected_simulation_node(self.output_node)
@@ -130,6 +132,8 @@ class CONTINUUM_LIQUID_OT_bake(bpy.types.Operator):
         self.start_frame = int(settings.get("start_frame", 1))
         self.total_frames = max(1, int(settings.get("end_frame", 1)) - self.start_frame)
         self.completed_frames = 0
+        particle_count = 0
+        particle_stats_available = False
         bake_running = True
         scene = getattr(context, "scene", None)
 
@@ -170,10 +174,13 @@ class CONTINUUM_LIQUID_OT_bake(bpy.types.Operator):
             solver_main.clear_message_callback()
 
     def _handle_solver_message(self, message):
+        global particle_count, particle_stats_available
         if not isinstance(message, dict) or message.get("type") != "stats":
             return
         self.completed_frames = int(message.get("frame", 0))
         self.total_frames = max(1, int(message.get("total_frames", self.total_frames)))
+        particle_count = max(0, int(message.get("particle_count", particle_count)))
+        particle_stats_available = "particle_count" in message
 
     def modal(self, context, event):
         if event.type == "ESC":

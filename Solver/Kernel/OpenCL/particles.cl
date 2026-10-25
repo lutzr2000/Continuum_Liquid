@@ -43,7 +43,6 @@ sample_field(__global const float *field, const int3 base, const float3 fraction
 
 __kernel void count_particles_per_cell(__global const float *particles,
                                        __global int *bin_counts,
-                                       __global int *particle_count,
                                        const int number_of_particles,
                                        const float inv_dx,
                                        const int nx,
@@ -57,9 +56,6 @@ __kernel void count_particles_per_cell(__global const float *particles,
     const float3 position = vload3(0, particles + offset);
     const int3 base = interpolation_base(position, inv_dx, nx, ny, nz);
     atomic_inc((volatile __global uint *)(bin_counts + grid_index(base.x, base.y, base.z, ny, nz)));
-
-    const int3 cell = clamp(convert_int3_rtz(position * inv_dx), (int3)(1), (int3)(nx - 2, ny - 2, nz - 2));
-    atomic_inc((volatile __global uint *)(particle_count + grid_index(cell.x, cell.y, cell.z, ny, nz)));
 }
 
 __kernel void scan_blocks_exclusive(
@@ -140,7 +136,6 @@ __kernel void particle_to_grid_gather(__global const float *particles,
                                       __global const float *particle_velocity,
                                       __global const int *bin_offsets,
                                       __global const int *bin_counts,
-                                      __global const int *particle_count,
                                       __global float *u,
                                       __global float *v,
                                       __global float *w,
@@ -149,50 +144,77 @@ __kernel void particle_to_grid_gather(__global const float *particles,
                                       const float inv_particles_per_cell,
                                       const int nx,
                                       const int ny,
-                                      const int nz) {
-    const int index = get_global_id(0);
+                                      const int nz,
+                                      __local float4 *partial_velocity,
+                                      __local float4 *partial_weight,
+                                      __local int *partial_particle_count) {
+    const int index = get_group_id(0);
     if (index >= nx * ny * nz)
         return;
+    const int lane = get_local_id(0);
+    const int lane_count = get_local_size(0);
 
     const int3 cell = grid_coordinates(index, ny, nz);
     float3 velocity_sum = (float3)(0.0f);
     float3 weight_sum = (float3)(0.0f);
+    int particles_in_cell = 0;
 
     const float3 grid_position = convert_float3(cell);
     const float3 u_position = grid_position + (float3)(1.0f, 0.5f, 0.5f);
     const float3 v_position = grid_position + (float3)(0.5f, 1.0f, 0.5f);
     const float3 w_position = grid_position + (float3)(0.5f, 0.5f, 1.0f);
-    for (int ox = -1; ox <= 1; ++ox) {
+    for (int neighbor = lane; neighbor < 27; neighbor += lane_count) {
+        const int ox = neighbor / 9 - 1;
+        const int oy = (neighbor / 3) % 3 - 1;
+        const int oz = neighbor % 3 - 1;
         const int base_x = cell.x + ox;
         if (base_x < 0 || base_x >= nx - 1)
             continue;
-        for (int oy = -1; oy <= 1; ++oy) {
-            const int base_y = cell.y + oy;
-            if (base_y < 0 || base_y >= ny - 1)
-                continue;
-            for (int oz = -1; oz <= 1; ++oz) {
-                const int base_z = cell.z + oz;
-                if (base_z < 0 || base_z >= nz - 1)
-                    continue;
+        const int base_y = cell.y + oy;
+        if (base_y < 0 || base_y >= ny - 1)
+            continue;
+        const int base_z = cell.z + oz;
+        if (base_z < 0 || base_z >= nz - 1)
+            continue;
 
-                const int bin = grid_index(base_x, base_y, base_z, ny, nz);
-                const int begin = bin_offsets[bin];
-                const int end = begin + bin_counts[bin];
-                for (int particle_index = begin; particle_index < end; ++particle_index) {
-                    const int particle_offset = 3 * particle_index;
-                    const float3 position = vload3(0, particles + particle_offset);
-                    const float3 p = position * inv_dx;
-                    const float3 wu_axis = max((float3)(0.0f), 1.0f - fabs(p - u_position));
-                    const float3 wv_axis = max((float3)(0.0f), 1.0f - fabs(p - v_position));
-                    const float3 ww_axis = max((float3)(0.0f), 1.0f - fabs(p - w_position));
-                    const float3 weight = (float3)(wu_axis.x * wu_axis.y * wu_axis.z, wv_axis.x * wv_axis.y * wv_axis.z,
-                                                   ww_axis.x * ww_axis.y * ww_axis.z);
-                    velocity_sum += weight * vload3(0, particle_velocity + particle_offset);
-                    weight_sum += weight;
-                }
-            }
+        const int bin = grid_index(base_x, base_y, base_z, ny, nz);
+        const int begin = bin_offsets[bin];
+        const int end = begin + bin_counts[bin];
+        for (int particle_index = begin; particle_index < end; ++particle_index) {
+            const int particle_offset = 3 * particle_index;
+            const float3 position = vload3(0, particles + particle_offset);
+            const int3 particle_cell = clamp(convert_int3_rtz(position * inv_dx),
+                                               (int3)(1), (int3)(nx - 2, ny - 2, nz - 2));
+            particles_in_cell += all(particle_cell == cell);
+            const float3 p = position * inv_dx;
+            const float3 wu_axis = max((float3)(0.0f), 1.0f - fabs(p - u_position));
+            const float3 wv_axis = max((float3)(0.0f), 1.0f - fabs(p - v_position));
+            const float3 ww_axis = max((float3)(0.0f), 1.0f - fabs(p - w_position));
+            const float3 weight = (float3)(wu_axis.x * wu_axis.y * wu_axis.z, wv_axis.x * wv_axis.y * wv_axis.z,
+                                           ww_axis.x * ww_axis.y * ww_axis.z);
+            velocity_sum += weight * vload3(0, particle_velocity + particle_offset);
+            weight_sum += weight;
         }
     }
+
+    partial_velocity[lane] = (float4)(velocity_sum, 0.0f);
+    partial_weight[lane] = (float4)(weight_sum, 0.0f);
+    partial_particle_count[lane] = particles_in_cell;
+    barrier(CLK_LOCAL_MEM_FENCE);
+    for (int offset = lane_count >> 1; offset > 0; offset >>= 1) {
+        if (lane < offset) {
+            partial_velocity[lane] += partial_velocity[lane + offset];
+            partial_weight[lane] += partial_weight[lane + offset];
+            partial_particle_count[lane] += partial_particle_count[lane + offset];
+        }
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }
+
+    if (lane != 0)
+        return;
+    velocity_sum = partial_velocity[0].xyz;
+    weight_sum = partial_weight[0].xyz;
+    particles_in_cell = partial_particle_count[0];
 
     const float3 grid_velocity = (float3)(weight_sum.x > 0.0f ? velocity_sum.x / weight_sum.x : 0.0f,
                                           weight_sum.y > 0.0f ? velocity_sum.y / weight_sum.y : 0.0f,
@@ -201,7 +223,7 @@ __kernel void particle_to_grid_gather(__global const float *particles,
     v[index] = grid_velocity.y;
     w[index] = grid_velocity.z;
 
-    fluid_fraction[index] = convert_float(particle_count[index]) * inv_particles_per_cell;
+    fluid_fraction[index] = convert_float(particles_in_cell) * inv_particles_per_cell;
 }
 
 __kernel void grid_to_particle(__global float *particle_velocity,

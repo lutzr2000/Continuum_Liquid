@@ -183,7 +183,6 @@ def solver(config: dict, timings=None):
         grid_shape,
         particle_capacity,
     )
-    particle_count = helper.device_array(context, grid_shape, dtype=np.int32)
     # velocity
     u = helper.device_array(context, grid_shape)
     v = helper.device_array(context, grid_shape)
@@ -227,7 +226,14 @@ def solver(config: dict, timings=None):
     )
     output_manager = output.create_output(context, particle_cache)
     output.submit_host(output_manager, particles_host, frame=start_frame)
-    emit_message({"type": "stats", "frame": 0, "total_frames": total_frames})
+    emit_message(
+        {
+            "type": "stats",
+            "frame": 0,
+            "total_frames": total_frames,
+            "particle_count": number_of_particles,
+        }
+    )
 
     # ------------time loop------------------
     t = 0
@@ -245,8 +251,16 @@ def solver(config: dict, timings=None):
 
         # Apply the stationary outflow and inflow masks before every step.
         if dynamic_sources and number_of_particles:
-            cl.enqueue_copy(queue, particles_host, particles).wait()
-            cl.enqueue_copy(queue, particle_velocity_host, particle_velocity).wait()
+            # Queue both downloads before waiting.  The old pair of immediate
+            # waits forced an avoidable host/device round-trip between them.
+            cl.enqueue_copy(queue, particles_host, particles, is_blocking=False)
+            velocity_download = cl.enqueue_copy(
+                queue,
+                particle_velocity_host,
+                particle_velocity,
+                is_blocking=False,
+            )
+            velocity_download.wait()
         if dynamic_sources:
             particles_host, particle_velocity_host = source_particles.apply_sources(
                 particles_host,
@@ -269,6 +283,7 @@ def solver(config: dict, timings=None):
                         "type": "stats",
                         "frame": output_frame,
                         "total_frames": total_frames,
+                        "particle_count": number_of_particles,
                     }
                 )
             continue
@@ -310,7 +325,6 @@ def solver(config: dict, timings=None):
                 particle_bin_counts,
                 particle_bin_scan_outputs,
                 particle_bin_scan_sums,
-                particle_count,
                 fluid_fraction,
                 number_of_particles,
                 grid_shape,
@@ -510,6 +524,7 @@ def solver(config: dict, timings=None):
                     "type": "stats",
                     "frame": output_frame,
                     "total_frames": total_frames,
+                    "particle_count": number_of_particles,
                 }
             )
 

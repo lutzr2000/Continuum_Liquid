@@ -7,13 +7,14 @@ MAX_REDUCTION_BLOCKS: int = 1024
 REDUCTION_THREADS_PER_BLOCK: int = 256
 THREADS_PER_BLOCK_3D: tuple[int, int, int] = (4, 4, 4)
 THREADS_PER_BLOCK_2D: tuple[int, int] = (4, 4)
+GATHER_THREADS_PER_CELL: int = 8
 FIELD_DTYPE = np.float32
 
 
 def configure_for_device(device, backend: str) -> None:
     """Choose safe work sizes from the selected OpenCL device limits."""
     global MAX_REDUCTION_BLOCKS, REDUCTION_THREADS_PER_BLOCK
-    global THREADS_PER_BLOCK_3D, THREADS_PER_BLOCK_2D
+    global THREADS_PER_BLOCK_3D, THREADS_PER_BLOCK_2D, GATHER_THREADS_PER_CELL
 
     max_group_size = int(device.max_work_group_size)
     max_items = tuple(int(value) for value in device.max_work_item_sizes)
@@ -21,6 +22,11 @@ def configure_for_device(device, backend: str) -> None:
 
     THREADS_PER_BLOCK_3D = (TILE_SIZE, TILE_SIZE, TILE_SIZE)
     THREADS_PER_BLOCK_2D = (TILE_SIZE, TILE_SIZE)
+    # A cell's particle neighbourhood is shared by a small work-group.  Eight
+    # lanes are enough to remove dense-cell stragglers without making empty
+    # cells excessively expensive on CPU OpenCL implementations.
+    gather_limit = max(1, min(8, max_group_size, max_items[0]))
+    GATHER_THREADS_PER_CELL = 1 << (gather_limit.bit_length() - 1)
 
     backend = str(backend).upper()
     preferred_reduction_size = 64 if backend == "CPU" else 256

@@ -1,7 +1,7 @@
 from bpy.props import BoolProperty, FloatProperty, FloatVectorProperty
 
 from . import node_base, sockets
-from ..Core import load_result, viewer
+from ..Core import baking, load_result, viewer
 
 
 def update_particle_display(self, _context):
@@ -76,5 +76,9 @@ class ContinuumLiquidViewerNode(node_base.ContinuumLiquidBaseNode):
             text="Hide Particles" if particles_visible else "Show Particles",
             icon="HIDE_ON" if particles_visible else "HIDE_OFF",
         )
+        if baking.particle_stats_available:
+            column.separator()
+            particles_text = f"{int(baking.particle_count):,}".replace(",", ".")
+            column.label(text=f"Particles: {particles_text}")
         column.separator()
         column.prop(self, "debug_timing")

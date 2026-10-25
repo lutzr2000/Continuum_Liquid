@@ -81,7 +81,6 @@ def particle_to_grid(
     particle_bin_counts,
     particle_bin_scan_outputs,
     particle_bin_scan_sums,
-    particle_count,
     fluid_fraction,
     particle_count_total,
     grid_shape,
@@ -93,7 +92,6 @@ def particle_to_grid(
     grid_cell_count = nx * ny * nz
 
     helper.fill_device(queue, particle_bin_counts, 0, dtype=np.int32)
-    helper.fill_device(queue, particle_count, 0, dtype=np.int32)
 
     kernels["count_particles_per_cell"](
         queue,
@@ -101,7 +99,6 @@ def particle_to_grid(
         None,
         particles,
         particle_bin_counts,
-        particle_count,
         np.int32(particle_count_total),
         FIELD_DTYPE(1.0 / dx),
         np.int32(nx),
@@ -142,15 +139,15 @@ def particle_to_grid(
         particle_velocity,
     )
 
+    gather_threads = kernel_config.GATHER_THREADS_PER_CELL
     kernels["particle_to_grid_gather"](
         queue,
-        (grid_cell_count,),
-        None,
+        (grid_cell_count * gather_threads,),
+        (gather_threads,),
         particles,
         particle_velocity,
         particle_bin_offsets,
         particle_bin_counts,
-        particle_count,
         u,
         v,
         w,
@@ -160,6 +157,9 @@ def particle_to_grid(
         np.int32(nx),
         np.int32(ny),
         np.int32(nz),
+        cl.LocalMemory(gather_threads * 4 * np.dtype(FIELD_DTYPE).itemsize),
+        cl.LocalMemory(gather_threads * 4 * np.dtype(FIELD_DTYPE).itemsize),
+        cl.LocalMemory(gather_threads * np.dtype(np.int32).itemsize),
     )
     return (
         particles,
