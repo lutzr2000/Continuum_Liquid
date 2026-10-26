@@ -63,6 +63,19 @@ def grid_obstacle_bc(kernels, queue, velocity, fluid_fraction, obstacle, grid_sh
         np.int32(ny),
         np.int32(nz),
     )
+    # Run this as a separate kernel so every solid cell reads already-clamped
+    # values from stable fluid neighbours.  This is the obstacle equivalent of
+    # the tangential ghost-cell copy used by grid_domain_bc.
+    kernels["extrapolate_obstacle_velocity"](
+        queue,
+        (nx * ny * nz,),
+        None,
+        *velocity,
+        obstacle,
+        np.int32(nx),
+        np.int32(ny),
+        np.int32(nz),
+    )
     return velocity, fluid_fraction
 
 

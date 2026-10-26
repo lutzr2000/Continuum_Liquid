@@ -200,8 +200,31 @@ class CONTINUUM_LIQUID_OT_bake(bpy.types.Operator):
             self.total_frames,
         )
 
+        # The cache metadata is created by the solver thread once its setup is
+        # complete.  Attach the viewport manager as soon as it appears instead
+        # of waiting for the entire bake to finish.
+        metadata_path = self.bake_directory / load_result.CACHE_FILENAME
+        loaded_directory = load_result.normalized_path(
+            PARTICLE_RESULTS.loaded_directory
+        )
+        bake_directory = load_result.normalized_path(self.bake_directory)
+        if metadata_path.is_file() and loaded_directory != bake_directory:
+            try:
+                PARTICLE_RESULTS.load_bake(
+                    self.bake_directory, simulation_node=self.simulation_node
+                )
+            except (OSError, ValueError):
+                # The worker may still be publishing the metadata file.  The
+                # next timer event will retry without interrupting the bake.
+                pass
+
         if scene is not None and scene.frame_current != blender_frame:
             scene.frame_set(blender_frame)
+        # A stats message can arrive just before the asynchronous writer has
+        # published its frame.  Retry on every timer tick so the viewport
+        # switches to it as soon as the file is ready, even when the timeline
+        # frame itself no longer changes.
+        PARTICLE_RESULTS.update_frame(blender_frame)
         if self.job_result is None:
             return {"PASS_THROUGH"}
 

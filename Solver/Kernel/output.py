@@ -43,7 +43,14 @@ def write_particles(cache_directory, particles, frame):
     filepath = (
         Path(cache_directory) / FRAME_DIRECTORY / FRAME_PATTERN.format(frame=int(frame))
     )
-    positions.tofile(filepath)
+    temporary_filepath = filepath.with_suffix(filepath.suffix + ".tmp")
+    try:
+        positions.tofile(temporary_filepath)
+        # Publish only complete frames.  The Blender UI can poll the final
+        # filename while writer threads continue preparing later frames.
+        temporary_filepath.replace(filepath)
+    finally:
+        temporary_filepath.unlink(missing_ok=True)
 
 
 def _pinned_array(
